@@ -16,6 +16,41 @@ finish-args:
   - --socket=ssh-auth          # ssh-agent
   - --talk-name=org.freedesktop.Flatpak   # spawn host editors via flatpak-spawn (optional)
 modules:
+  # --- build deps for VTE that the GNOME SDK does not carry -----------------
+  - name: simdutf
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DSIMDUTF_TESTS=OFF
+      - -DSIMDUTF_TOOLS=OFF
+      - -DSIMDUTF_BENCHMARKS=OFF
+      - -DBUILD_SHARED_LIBS=ON
+    cleanup: [/include, /lib/pkgconfig, /lib/cmake]
+    sources:
+      - type: archive
+        url: https://github.com/simdutf/simdutf/archive/refs/tags/v9.1.2.tar.gz
+        sha256: 0992cd1bcddee10424e49d6bc3ff8da02f9abc4c48033cbb1b0b41b62c727d33
+  - name: fmt
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DFMT_TEST=OFF
+      - -DFMT_DOC=OFF
+      - -DBUILD_SHARED_LIBS=ON
+    cleanup: ['*']   # VTE uses fmt header-only; nothing needed at runtime
+    sources:
+      - type: archive
+        url: https://github.com/fmtlib/fmt/archive/refs/tags/12.2.0.tar.gz
+        sha256: 8b852bb5aa6e7d8564f9e81394055395dd1d1936d38dfd3a17792a02bebd7af0
+  - name: fast_float
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DFASTFLOAT_TEST=OFF
+      - -DFASTFLOAT_SANITIZE=OFF
+    cleanup: ['*']   # header-only
+    sources:
+      - type: archive
+        url: https://github.com/fastfloat/fast_float/archive/refs/tags/v8.2.10.tar.gz
+        sha256: 76f958dd97b1cf4d8862d1f0986a47d4bdfa8845252bae15ef0f40de3b95961f
+
   # The GNOME runtime ships VTE for GTK 4 only; build the GTK 3 flavour ourselves.
   - name: vte
     buildsystem: meson
