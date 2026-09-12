@@ -19,6 +19,4 @@ BuildRequires python3-devel, %pyproject_wheel / %pyproject_install, plus the
 three `install -Dm644` lines from the Flatpak manifest.
 
 ## Local install (any distro)
-    pipx install .          # or: pip install --user .
-    install -Dm644 data/com.sshtik.sshtik.desktop ~/.local/share/applications/
-    install -Dm644 data/com.sshtik.sshtik.svg ~/.local/share/icons/hicolor/scalable/apps/
+    ./install.sh            # pipx install --system-site-packages + desktop file + icon

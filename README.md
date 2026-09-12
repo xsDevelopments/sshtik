@@ -3,9 +3,20 @@
 SSH terminal with pop-up SFTP (F5) and MySQL/MariaDB (F6) helpers that piggyback
 on the live session.
 
-    sudo apt install gir1.2-vte-2.91 python3-paramiko python3-gi   # Ubuntu
-    sudo dnf install vte291 python3-paramiko python3-gobject        # Fedora
-    ./run.py [user@]host [-p PORT]      # or just ./run.py for the host picker
+## Install
+
+    # 1. system packages (the GTK/VTE bindings can't come from pip)
+    sudo apt install gir1.2-vte-2.91 python3-paramiko python3-gi pipx   # Ubuntu / Debian
+    sudo dnf install vte291 python3-paramiko python3-gobject pipx       # Fedora
+
+    # 2. the app + menu entry
+    git clone https://github.com/xsDevelopments/sshtik && ./sshtik/install.sh
+
+    sshtik [user@]host [-p PORT]      # or just `sshtik` for the host picker
+
+`install.sh` runs `pipx install --system-site-packages .` — that flag matters; without it
+pipx tries to compile PyGObject from source. You can also just run `./sshtik.py` from the checkout.
+Flatpak and distro packages: see [packaging/](packaging/README.md).
 
 How it works: one paramiko Transport carries the interactive shell (VTE),
 the SFTP subsystem (file panel), and short exec channels used to peek at the

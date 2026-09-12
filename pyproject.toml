@@ -9,7 +9,9 @@ description = "SSH terminal with pop-up SFTP and MySQL/MariaDB helpers that ride
 readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.10"
-dependencies = ["paramiko>=2.12", "PyGObject>=3.42"]
+# GTK, VTE and paramiko come from the distro (see README); they are deliberately
+# not pip dependencies so that `pipx install --system-site-packages` needs no compiler.
+dependencies = []
 classifiers = [
     "Environment :: X11 Applications :: GTK",
     "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
