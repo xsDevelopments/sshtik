@@ -407,7 +407,9 @@ class FilePanel(Gtk.Window):
 
     def _open_editor(self, local, remote_path):
         editor = config.get("editor") or ""
-        if editor:
+        # Inside a Flatpak a configured host editor isn't reachable; the default
+        # handler goes through the desktop portal, which is.
+        if editor and not os.path.exists("/.flatpak-info"):
             subprocess.Popen(editor.split() + [local])
         else:
             Gio.AppInfo.launch_default_for_uri(Gio.File.new_for_path(local).get_uri(), None)

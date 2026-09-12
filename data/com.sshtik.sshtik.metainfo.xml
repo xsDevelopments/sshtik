@@ -61,6 +61,14 @@
     <color type="primary" scheme_preference="dark">#1c4e6b</color>
   </branding>
   <releases>
+    <release version="0.1.2" date="2026-09-13">
+      <description>
+        <ul>
+          <li>Flatpak packaging (builds GTK 3 VTE into the app); Flathub submission manifest</li>
+          <li>Column headers with underscores display correctly; primary-key marker no longer needs an emoji font</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.1" date="2026-09-13">
       <description>
         <ul>

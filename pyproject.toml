@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sshtik"
-version = "0.1.1"
+version = "0.1.2"
 description = "SSH terminal with pop-up SFTP and MySQL/MariaDB helpers that ride on the live session"
 readme = "README.md"
 license = {file = "LICENSE"}

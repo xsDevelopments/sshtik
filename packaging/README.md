@@ -1,12 +1,28 @@
 # Packaging
 
 ## Flatpak (primary)
-See the header of `com.sshtik.sshtik.yml`. `python-deps.json` pins paramiko and its
-dependency chain to PyPI wheels/sdists; regenerate when bumping versions with
-`flatpak-pip-generator paramiko` (from flatpak-builder-tools) or the script in git history.
 
-For Flathub: fork https://github.com/flathub/flathub, add the manifest with
-`sources: type: git, url: https://github.com/xsDevelopments/sshtik, tag: v0.1.0`, open a PR.
+Local build & run (uses the checkout as source):
+
+    flatpak install flathub org.flatpak.Builder org.gnome.Platform//50 org.gnome.Sdk//50
+    flatpak run org.flatpak.Builder --user --install --force-clean build-dir packaging/com.sshtik.sshtik.yml
+    flatpak run com.sshtik.sshtik
+
+The GNOME runtime only ships VTE for GTK 4, so the manifest builds GTK 3 VTE
+(plus its simdutf / fmt / fast_float build deps). `python-deps.json` pins
+paramiko and its dependency chain to PyPI wheels/sdists; regenerate when
+bumping versions with `flatpak-pip-generator paramiko` (flatpak-builder-tools).
+
+### Submitting to Flathub
+
+1. Tag a release; put the tag and its commit hash into `flathub/com.sshtik.sshtik.yml`.
+2. Fork https://github.com/flathub/flathub, branch off `new-pr` (not master).
+3. Copy `flathub/com.sshtik.sshtik.yml` and `flathub/python-deps.json` into the fork root.
+4. Open a PR against `flathub/flathub:new-pr`. The bot builds it; a reviewer
+   checks permissions (`--filesystem=home` is justified by the local file pane)
+   and metadata. Reviews usually take a few days.
+5. Once merged, Flathub creates `flathub/com.sshtik.sshtik` and grants you push
+   access; future releases are PRs against that repo bumping the tag/commit.
 
 ## Debian / Ubuntu
     sudo apt install python3-build python3-stdeb dh-python

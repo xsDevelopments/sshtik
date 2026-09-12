@@ -1,7 +1,6 @@
-# Flatpak manifest. Build & run locally:
-#   flatpak install flathub org.flatpak.Builder org.gnome.Platform//50 org.gnome.Sdk//50
-#   flatpak run org.flatpak.Builder --user --install --force-clean build-dir packaging/com.sshtik.sshtik.yml
-#   flatpak run com.sshtik.sshtik
+# Flathub submission manifest. Identical to ../com.sshtik.sshtik.yml except the
+# app source is a pinned git tag. Copy this file + python-deps.json into the
+# flathub/flathub PR (see ../README.md).
 app-id: com.sshtik.sshtik
 runtime: org.gnome.Platform
 runtime-version: '50'
@@ -78,6 +77,7 @@ modules:
       - install -Dm644 data/com.sshtik.sshtik.metainfo.xml ${FLATPAK_DEST}/share/metainfo/com.sshtik.sshtik.metainfo.xml
       - install -Dm644 data/com.sshtik.sshtik.svg ${FLATPAK_DEST}/share/icons/hicolor/scalable/apps/com.sshtik.sshtik.svg
     sources:
-      - type: dir
-        path: ..
-        skip: [.git, build-dir, .flatpak-builder, repo, site]
+      - type: git
+        url: https://github.com/xsDevelopments/sshtik.git
+        tag: v0.1.2
+        commit: COMMIT_PLACEHOLDER
