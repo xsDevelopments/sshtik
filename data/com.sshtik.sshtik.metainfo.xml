@@ -43,6 +43,14 @@
     <color type="primary" scheme_preference="dark">#1c4e6b</color>
   </branding>
   <releases>
+    <release version="0.1.1" date="2026-09-13">
+      <description>
+        <ul>
+          <li>Follow nested ssh: F5/F6 open on the host you ssh'd onward to, tunnelled through the current session</li>
+          <li>Fix installation via pipx (use the distro's GTK/VTE/paramiko); add install.sh with menu entry and icon</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.0" date="2026-09-12">
       <description><p>First release.</p></description>
     </release>
