@@ -16,6 +16,25 @@ finish-args:
   - --socket=ssh-auth          # ssh-agent
   - --talk-name=org.freedesktop.Flatpak   # spawn host editors via flatpak-spawn (optional)
 modules:
+  # The GNOME runtime ships VTE for GTK 4 only; build the GTK 3 flavour ourselves.
+  - name: vte
+    buildsystem: meson
+    config-opts:
+      - -Dgtk3=true
+      - -Dgtk4=false
+      - -Dvapi=false
+      - -Ddocs=false
+      - -Dglade=false
+      - -D_systemd=false
+    cleanup:
+      - /bin
+      - /include
+      - /lib/pkgconfig
+      - /share/vala
+    sources:
+      - type: archive
+        url: https://gitlab.gnome.org/GNOME/vte/-/archive/0.84.1/vte-0.84.1.tar.gz
+        sha256: 9f73468982a339cd1eb942beb7d348a5564c9ed48473ad1690c791f8474916ec
   - python-deps.json
   - name: sshtik
     buildsystem: simple
