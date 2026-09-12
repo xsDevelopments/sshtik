@@ -28,6 +28,8 @@
   </description>
   <launchable type="desktop-id">com.sshtik.sshtik.desktop</launchable>
   <url type="homepage">https://sshtik.com</url>
+  <url type="vcs-browser">https://github.com/xsDevelopments/sshtik</url>
+  <url type="bugtracker">https://github.com/xsDevelopments/sshtik/issues</url>
   <content_rating type="oars-1.1"/>
   <supports>
     <control>keyboard</control>

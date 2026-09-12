@@ -21,6 +21,7 @@ classifiers = [
 
 [project.urls]
 Homepage = "https://sshtik.com"
+Repository = "https://github.com/xsDevelopments/sshtik"
 
 [project.scripts]
 sshtik = "sshtik.app:main"

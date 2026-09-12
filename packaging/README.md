@@ -6,7 +6,7 @@ dependency chain to PyPI wheels/sdists; regenerate when bumping versions with
 `flatpak-pip-generator paramiko` (from flatpak-builder-tools) or the script in git history.
 
 For Flathub: fork https://github.com/flathub/flathub, add the manifest with
-`sources: type: git, url: <repo>, tag: v0.1.0`, open a PR.
+`sources: type: git, url: https://github.com/xsDevelopments/sshtik, tag: v0.1.0`, open a PR.
 
 ## Debian / Ubuntu
     sudo apt install python3-build python3-stdeb dh-python
