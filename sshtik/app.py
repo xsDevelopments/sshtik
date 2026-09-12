@@ -177,21 +177,30 @@ class MainWindow(Gtk.Window):
         d.destroy()
         return pw
 
-    def open_tab(self, host, user, port):
+    def _connect(self, host, user, port, via=None, resolved=None):
+        """Open an SSHConnection, prompting for a password on auth failure.
+        Returns None if the user cancels or the connection fails."""
         password = None
+        where = f"{(resolved or {}).get('user') or user or ''}@{host}" + (f" (via {via.host})" if via else "")
         while True:
             try:
-                conn = SSHConnection(host, user=user, port=port, password=password)
-                break
+                return SSHConnection(host, user=user, port=port, password=password,
+                                     via=via, resolved=resolved)
             except paramiko.AuthenticationException:
-                password = self._ask_password(f"Password for {user or ''}@{host}:")
+                password = self._ask_password(f"Password for {where}:")
                 if password is None:
-                    return
+                    return None
             except Exception as e:
                 md = Gtk.MessageDialog(transient_for=self, message_type=Gtk.MessageType.ERROR,
-                                       buttons=Gtk.ButtonsType.OK, text=str(e))
-                md.run(); md.destroy(); return
+                                       buttons=Gtk.ButtonsType.OK, text=f"{where}: {e}")
+                md.run(); md.destroy(); return None
+
+    def open_tab(self, host, user, port):
+        conn = self._connect(host, user, port)
+        if conn is None:
+            return
         term = SSHTerminal(conn)
+        term.hops = [conn]  # connection chain; grows when the user ssh's onward
         sw = Gtk.ScrolledWindow(); sw.add(term)
 
         label = Gtk.Box(spacing=4)
@@ -208,23 +217,57 @@ class MainWindow(Gtk.Window):
         self.notebook.set_current_page(-1)
         term.grab_focus()
 
+    def active_connection(self, term):
+        """Follow nested `ssh` sessions: if the shell on hop N is running an
+        ssh client, tunnel a connection to its target through hop N and use
+        that. Live hops are cached on the terminal and reused."""
+        chain = term.hops
+        i = 0
+        while True:
+            conn = chain[i]
+            tgt = conn.hop_target()
+            if not tgt:
+                for c in chain[i + 1:]:
+                    c.close()
+                del chain[i + 1:]
+                return conn
+            key = (tgt["hostname"], tgt["user"], tgt["port"])
+            if len(chain) > i + 1 and getattr(chain[i + 1], "key", None) == key and chain[i + 1].alive():
+                i += 1
+                continue
+            for c in chain[i + 1:]:
+                c.close()
+            del chain[i + 1:]
+            new = self._connect(tgt["label"], tgt["user"], tgt["port"], via=conn, resolved=tgt)
+            if new is None:
+                return None
+            new.key = key
+            new.find_session_shell(conn.my_addresses(tgt["ssh_pid"]))
+            chain.append(new)
+            i += 1
+
     def close_tab(self, page=None):
         if page is None:
             page = self.notebook.get_nth_page(self.notebook.get_current_page())
         if page is None:
             return
         term = page.get_child()
-        try: term.conn.close()
-        except Exception: pass
+        for c in reversed(getattr(term, "hops", [term.conn])):
+            try: c.close()
+            except Exception: pass
         self.notebook.remove_page(self.notebook.page_num(page))
 
     def on_files(self, *_):
         t = self.current()
-        if t: FilePanel(t.conn, parent=self).show_all()
+        if not t: return
+        conn = self.active_connection(t)
+        if conn: FilePanel(conn, parent=self).show_all()
 
     def on_db(self, *_):
         t = self.current()
-        if t: DBPanel(t.conn, parent=self).show_all()
+        if not t: return
+        conn = self.active_connection(t)
+        if conn: DBPanel(conn, parent=self).show_all()
 
 
 def main():

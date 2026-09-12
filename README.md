@@ -22,6 +22,13 @@ How it works: one paramiko Transport carries the interactive shell (VTE),
 the SFTP subsystem (file panel), and short exec channels used to peek at the
 shell's cwd (`/proc/<pid>/cwd`) and foreground process (`mysql` argv).
 
+**Nested ssh:** if you `ssh` onward from inside the session and then press F5/F6,
+sshTIK notices the running `ssh` client, resolves its target with that host's own
+`ssh -G`, tunnels a new connection through the current one (like `ProxyJump`) and
+opens the panel on the inner host. Hops are followed recursively and cached per tab.
+Authentication for the inner hop comes from *your* keys/agent, so you may be asked
+for a password once if the first hop's key isn't authorised there.
+
 ## Keys
 
 | Where | Key | Action |

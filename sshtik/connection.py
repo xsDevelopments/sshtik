@@ -29,19 +29,27 @@ def resolve_ssh_config(host, user=None, port=None):
 
 class SSHConnection:
     def __init__(self, host, user=None, port=None, password=None, key_filename=None,
-                 timeout=15):
-        r = resolve_ssh_config(host, user, port)
+                 timeout=15, via=None, resolved=None):
+        """`via`: an existing SSHConnection to tunnel through (like ProxyJump).
+        `resolved`: {"hostname","user","port"} already resolved on the via host
+        (so the via host's ~/.ssh/config applies, not ours)."""
+        r = resolved or resolve_ssh_config(host, user, port)
         self.host = host
         self.hostname = r["hostname"]
         self.user = r["user"]
-        self.port = r["port"]
+        self.port = int(r["port"] or 22)
+        self.via = via
+        sock = None
+        if via is not None:
+            sock = via.transport.open_channel(
+                "direct-tcpip", (self.hostname, self.port), ("127.0.0.1", 0), timeout=timeout)
         self._client = paramiko.SSHClient()
         self._client.load_system_host_keys()
         self._client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         self._client.connect(
             self.hostname, port=self.port, username=self.user, password=password,
-            key_filename=key_filename or r["key_filename"],
-            allow_agent=True, look_for_keys=True, timeout=timeout,
+            key_filename=key_filename or r.get("key_filename"),
+            allow_agent=True, look_for_keys=True, timeout=timeout, sock=sock,
         )
         self.transport = self._client.get_transport()
         self.transport.set_keepalive(30)
@@ -97,6 +105,74 @@ class SSHConnection:
             return None
         lines = out.splitlines()
         return int(tpgid), lines[0], lines[1:]
+
+    # ---- nested ssh ("follow the hop") -----------------------------------
+    def hop_target(self):
+        """If the shell's foreground process is an `ssh` client, return
+        {"hostname","user","port","label"} resolved with *this* host's ssh
+        config (`ssh -G`), plus the ssh client's pid. Else None."""
+        fg = self.foreground_process()
+        if not fg or fg[1] != "ssh":
+            return None
+        pid, _, argv = fg
+        args = [a for a in argv[1:] if a not in ("-G",)]
+        rc, out, _ = self.run("ssh -G " + " ".join(shlex.quote(a) for a in args))
+        if rc != 0:
+            return None
+        cfg = dict(line.split(None, 1) for line in out.splitlines() if " " in line)
+        # first non-option arg is the destination; skip values of options that take one
+        takes_value = set("bcDEeFIiJLlmOopQRSWw")
+        label, it = None, iter(args)
+        for a in it:
+            if a.startswith("-") and len(a) == 2 and a[1] in takes_value:
+                next(it, None)
+            elif not a.startswith("-"):
+                label = a; break
+        label = (label or cfg.get("hostname", "?")).split("@")[-1]
+        return {"hostname": cfg.get("hostname"), "user": cfg.get("user"),
+                "port": int(cfg.get("port", 22)), "label": label, "ssh_pid": pid}
+
+    def my_addresses(self, ssh_pid=None):
+        """Names this host might appear as in `who` on a machine it ssh'd into."""
+        cmd = "hostname; hostname -s 2>/dev/null; hostname -f 2>/dev/null"
+        if ssh_pid:
+            cmd += f"; ss -tnp 2>/dev/null | awk '/pid={ssh_pid},/{{print $4}}' | sed 's/:[0-9]*$//'"
+        _, out, _ = self.run(cmd)
+        return {a.strip() for a in out.splitlines() if a.strip()}
+
+    def find_session_shell(self, from_names):
+        """On this host, locate the interactive shell of the ssh session that
+        came from one of `from_names` (newest wins); fall back to the newest
+        session of this user. Sets and returns shell_pid."""
+        script = r"""
+who | awk -v u="$(id -un)" '$1==u {from=$NF; gsub(/[()]/,"",from); print $2, $3" "$4, from}' | sort -k2,3 -r
+"""
+        _, out, _ = self.run(script)
+        sessions = [line.split(None, 2) for line in out.splitlines() if line.strip()]
+        if not sessions:
+            # no utmp entry (containers, some sshd configs): newest interactive shell on a pty
+            _, out, _ = self.run(
+                "ps -u \"$(id -un)\" -o pid=,tty=,comm= --sort=-start_time | "
+                "awk '$2 ~ /^pts/ && $3 ~ /^(bash|zsh|sh|fish|dash|ksh)$/ {print $1; exit}'")
+            pid = out.strip()
+            self.shell_pid = int(pid) if pid.isdigit() else None
+            return self.shell_pid
+        match = [s for s in sessions if len(s) > 2 and s[2].split(":")[0] in from_names]
+        tty = (match or sessions)[0][0]
+        # the login shell is the process on that tty whose parent is sshd
+        rc, out, _ = self.run(
+            f"for p in $(ps -o pid= -t {shlex.quote(tty)}); do "
+            f"pp=$(ps -o ppid= -p $p | tr -d ' '); c=$(ps -o comm= -p $pp 2>/dev/null); "
+            f"case \"$c\" in sshd*) echo $p; break;; esac; done")
+        pid = out.strip().split()[0] if out.strip() else ""
+        if not pid.isdigit():
+            _, out, _ = self.run(f"ps -o pid= -t {shlex.quote(tty)} | head -1")
+            pid = out.strip()
+        self.shell_pid = int(pid) if pid.isdigit() else None
+        return self.shell_pid
+
+    def alive(self):
+        return self.transport is not None and self.transport.is_active()
 
     def close(self):
         if self._sftp:

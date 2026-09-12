@@ -281,7 +281,7 @@ class _Pane(Gtk.Box):
 # ---------------------------------------------------------------------------
 class FilePanel(Gtk.Window):
     def __init__(self, conn, parent=None):
-        super().__init__(title=f"Files — {conn.host}")
+        super().__init__(title=f"Files — {conn.host}" + (f" (via {conn.via.host})" if conn.via else ""))
         self.conn = conn
         w, h = config["window"].get("files", (1100, 650))
         self.set_default_size(w, h)

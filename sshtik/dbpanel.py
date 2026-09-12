@@ -50,7 +50,7 @@ def q_val(v):
 
 class DBPanel(Gtk.Window):
     def __init__(self, conn, parent=None):
-        super().__init__(title=f"Database — {conn.host}")
+        super().__init__(title=f"Database — {conn.host}" + (f" (via {conn.via.host})" if conn.via else ""))
         self.conn = conn
         w, h = config["window"].get("db", (1100, 700))
         self.set_default_size(w, h)
