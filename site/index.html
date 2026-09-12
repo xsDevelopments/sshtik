@@ -90,7 +90,10 @@
 
   <h2>Install</h2>
   <p class="note">Linux only for now — it's built on GTK and VTE, the same terminal widget as GNOME Terminal and xfce4-terminal.</p>
-<pre># Ubuntu / Debian
+<pre># Any distro with Flatpak: grab the .flatpak from the Downloads page, then
+flatpak install sshtik-*.flatpak
+
+# Or from source — Ubuntu / Debian
 sudo apt install gir1.2-vte-2.91 python3-paramiko python3-gi pipx
 
 # Fedora
@@ -99,7 +102,6 @@ sudo dnf install vte291 python3-paramiko python3-gobject pipx
 git clone https://github.com/xsDevelopments/sshtik
 ./sshtik/install.sh
 sshtik user@host -p 22</pre>
-  <p class="note">A Flatpak on Flathub is in the works.</p>
 
   <h2>Also in the box</h2>
   <ul>

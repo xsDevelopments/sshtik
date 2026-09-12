@@ -5,6 +5,13 @@ on the live session.
 
 ## Install
 
+**Flatpak (any distro):** download the `.flatpak` from the
+[latest release](https://github.com/xsDevelopments/sshtik/releases/latest), then
+
+    flatpak install sshtik-*.flatpak
+
+**From source:**
+
     # 1. system packages (the GTK/VTE bindings can't come from pip)
     sudo apt install gir1.2-vte-2.91 python3-paramiko python3-gi pipx   # Ubuntu / Debian
     sudo dnf install vte291 python3-paramiko python3-gobject pipx       # Fedora

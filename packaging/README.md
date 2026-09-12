@@ -13,7 +13,20 @@ The GNOME runtime only ships VTE for GTK 4, so the manifest builds GTK 3 VTE
 paramiko and its dependency chain to PyPI wheels/sdists; regenerate when
 bumping versions with `flatpak-pip-generator paramiko` (flatpak-builder-tools).
 
-### Submitting to Flathub
+### Distributing as a bundle (no store needed)
+
+    packaging/make-bundle.sh        # -> dist/sshtik-<version>-x86_64.flatpak
+
+Attach the file to the GitHub release. Users install it with
+`flatpak install sshtik-<version>-x86_64.flatpak` (the GNOME runtime is fetched
+from Flathub automatically) or by opening it in GNOME Software / Discover.
+Updates are manual (install the next bundle); a Flathub listing would automate that.
+
+### Submitting to Flathub (deferred)
+
+Flathub's requirements include a meaningful development history and a
+disclosure of AI-generated material; the submission PR and all review replies
+must be written by a human. Revisit once the project has some months of history.
 
 1. Tag a release; put the tag and its commit hash into `flathub/com.sshtik.sshtik.yml`.
 2. Fork https://github.com/flathub/flathub, branch off `new-pr` (not master).
