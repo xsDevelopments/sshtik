@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.sshtik.sshtik</id>
+  <name>sshTIK</name>
+  <summary>SSH terminal with pop-up SFTP and MySQL helpers</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <developer id="com.sshtik">
+    <name>sshTIK</name>
+  </developer>
+  <description>
+    <p>
+      sshTIK is a plain SSH terminal until you need more. Press F5 and a
+      dual-pane file transfer window opens, already sitting in the directory
+      your remote shell is in. Press F6 while you are at a mysql prompt and a
+      database browser opens on the same connection, with an editable data
+      grid, table structure and query history.
+    </p>
+    <p>
+      Everything runs over the single SSH connection you already authenticated:
+      no second login, no separate FTP server, no tunnels to configure.
+    </p>
+    <ul>
+      <li>Tabbed VTE terminal with saved hosts and ~/.ssh/config integration</li>
+      <li>SFTP file manager with drag-and-drop, recursive transfers and edit-remote-file-locally</li>
+      <li>MySQL/MariaDB browser that picks up the client you already launched</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">com.sshtik.sshtik.desktop</launchable>
+  <url type="homepage">https://sshtik.com</url>
+  <content_rating type="oars-1.1"/>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+  <branding>
+    <color type="primary" scheme_preference="light">#5fb3d9</color>
+    <color type="primary" scheme_preference="dark">#1c4e6b</color>
+  </branding>
+  <releases>
+    <release version="0.1.0" date="2026-09-12">
+      <description><p>First release.</p></description>
+    </release>
+  </releases>
+</component>

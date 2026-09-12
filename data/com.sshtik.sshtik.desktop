@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=sshTIK
+GenericName=SSH Client
+Comment=SSH terminal with pop-up SFTP and MySQL helpers
+Exec=sshtik
+Icon=com.sshtik.sshtik
+Terminal=false
+Categories=Network;RemoteAccess;TerminalEmulator;
+Keywords=ssh;sftp;mysql;mariadb;terminal;shell;
+StartupNotify=true

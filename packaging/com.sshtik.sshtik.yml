@@ -1,0 +1,29 @@
+# Flatpak manifest. Build & run locally:
+#   flatpak install flathub org.gnome.Platform//50 org.gnome.Sdk//50
+#   flatpak-builder --user --install --force-clean build-dir packaging/com.sshtik.sshtik.yml
+#   flatpak run com.sshtik.sshtik
+app-id: com.sshtik.sshtik
+runtime: org.gnome.Platform
+runtime-version: '50'
+sdk: org.gnome.Sdk
+command: sshtik
+finish-args:
+  - --share=ipc
+  - --share=network            # SSH
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --filesystem=home          # local pane of the file panel, ~/.ssh, editors
+  - --socket=ssh-auth          # ssh-agent
+  - --talk-name=org.freedesktop.Flatpak   # spawn host editors via flatpak-spawn (optional)
+modules:
+  - packaging/python-deps.json
+  - name: sshtik
+    buildsystem: simple
+    build-commands:
+      - pip3 install --no-deps --no-build-isolation --prefix=${FLATPAK_DEST} .
+      - install -Dm644 data/com.sshtik.sshtik.desktop ${FLATPAK_DEST}/share/applications/com.sshtik.sshtik.desktop
+      - install -Dm644 data/com.sshtik.sshtik.metainfo.xml ${FLATPAK_DEST}/share/metainfo/com.sshtik.sshtik.metainfo.xml
+      - install -Dm644 data/com.sshtik.sshtik.svg ${FLATPAK_DEST}/share/icons/hicolor/scalable/apps/com.sshtik.sshtik.svg
+    sources:
+      - type: dir
+        path: ..

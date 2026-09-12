@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5fb3d9"/>
+      <stop offset="1" stop-color="#1c4e6b"/>
+    </linearGradient>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffd166"/>
+      <stop offset="1" stop-color="#f4a125"/>
+    </linearGradient>
+  </defs>
+  <!-- rounded background -->
+  <rect x="4" y="4" width="120" height="120" rx="26" fill="url(#bg)"/>
+  <!-- terminal prompt in the corner -->
+  <text x="16" y="112" font-family="monospace" font-size="16" font-weight="bold" fill="#ffffff" opacity="0.55">&gt;_</text>
+  <!-- tail -->
+  <path d="M96 64 L118 46 L112 64 L118 82 Z" fill="url(#body)" stroke="#8a5a10" stroke-width="2" stroke-linejoin="round"/>
+  <!-- body -->
+  <ellipse cx="62" cy="64" rx="40" ry="26" fill="url(#body)" stroke="#8a5a10" stroke-width="2.5"/>
+  <!-- stripes (pilotfish!) -->
+  <path d="M58 40 Q56 64 58 88" stroke="#1c4e6b" stroke-width="5" fill="none" opacity="0.7"/>
+  <path d="M74 42 Q72 64 74 86" stroke="#1c4e6b" stroke-width="5" fill="none" opacity="0.7"/>
+  <!-- dorsal + belly fins -->
+  <path d="M52 40 Q60 22 72 38 Z" fill="#f4a125" stroke="#8a5a10" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M56 88 Q62 102 72 88 Z" fill="#f4a125" stroke="#8a5a10" stroke-width="2" stroke-linejoin="round"/>
+  <!-- goggles: strap -->
+  <path d="M46 52 Q60 44 78 50" stroke="#2b2b2b" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <!-- goggles: lenses -->
+  <circle cx="38" cy="58" r="11" fill="#e8f7ff" stroke="#2b2b2b" stroke-width="4"/>
+  <circle cx="38" cy="58" r="4" fill="#1c1c1c"/>
+  <circle cx="35" cy="55" r="2" fill="#ffffff"/>
+  <!-- mouth -->
+  <path d="M24 68 Q28 72 32 69" stroke="#8a5a10" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+</svg>
