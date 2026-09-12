@@ -26,6 +26,24 @@
       <li>MySQL/MariaDB browser that picks up the client you already launched</li>
     </ul>
   </description>
+  <screenshots>
+    <screenshot type="default">
+      <caption>A plain SSH terminal until you press a function key</caption>
+      <image>https://raw.githubusercontent.com/xsDevelopments/sshtik/main/site/sshtik-ssh.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>F5: file transfer, remote pane already in the shell's directory</caption>
+      <image>https://raw.githubusercontent.com/xsDevelopments/sshtik/main/site/sshtik-sftp.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>F6: database browser with an editable grid, on the same connection</caption>
+      <image>https://raw.githubusercontent.com/xsDevelopments/sshtik/main/site/sshtik-mysql.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Saved hosts plus everything from ~/.ssh/config</caption>
+      <image>https://raw.githubusercontent.com/xsDevelopments/sshtik/main/site/sshtik-connect.png</image>
+    </screenshot>
+  </screenshots>
   <launchable type="desktop-id">com.sshtik.sshtik.desktop</launchable>
   <url type="homepage">https://sshtik.com</url>
   <url type="vcs-browser">https://github.com/xsDevelopments/sshtik</url>

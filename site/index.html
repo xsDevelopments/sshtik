@@ -34,6 +34,10 @@
   code { font-family: ui-monospace, Menlo, Consolas, monospace; background: var(--code); padding: 1px 5px; border-radius: 5px; font-size: .92em; }
   ul { padding-left: 22px; } li { margin: 4px 0; }
   a { color: var(--accent); }
+  .shots { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; margin: 16px 0 28px; }
+  .shots figure { margin: 0; }
+  .shots img { width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--line); box-shadow: 0 6px 18px rgba(0,0,0,.18); }
+  .shots figcaption { font-size: .9rem; color: var(--muted); margin-top: 6px; }
   .btns { display: flex; gap: 12px; flex-wrap: wrap; margin: 20px 0 0; }
   .btn { display: inline-block; padding: 10px 18px; border-radius: 10px; text-decoration: none; font-weight: 600; border: 1px solid var(--line); background: var(--card); color: var(--fg); }
   .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -71,6 +75,14 @@
     no tunnels to configure, nothing to install on the server.
   </p>
 
+
+  <h2>What it looks like</h2>
+  <div class="shots">
+    <figure><a href="sshtik-ssh.png"><img src="sshtik-ssh.png" alt="A plain SSH terminal until you press a function key" loading="lazy"></a><figcaption>A plain SSH terminal until you press a function key</figcaption></figure>
+    <figure><a href="sshtik-sftp.png"><img src="sshtik-sftp.png" alt="F5: file transfer, remote pane already in the shell's directory" loading="lazy"></a><figcaption>F5: file transfer, remote pane already in the shell's directory</figcaption></figure>
+    <figure><a href="sshtik-mysql.png"><img src="sshtik-mysql.png" alt="F6: database browser with an editable grid, on the same connection" loading="lazy"></a><figcaption>F6: database browser with an editable grid, on the same connection</figcaption></figure>
+    <figure><a href="sshtik-connect.png"><img src="sshtik-connect.png" alt="Saved hosts plus everything from ~/.ssh/config" loading="lazy"></a><figcaption>Saved hosts plus everything from ~/.ssh/config</figcaption></figure>
+  </div>
   <div class="btns">
     <a class="btn primary" href="https://github.com/xsDevelopments/sshtik">Source on GitHub</a>
     <a class="btn" href="https://github.com/xsDevelopments/sshtik/releases">Downloads</a>

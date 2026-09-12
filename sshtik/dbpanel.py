@@ -38,6 +38,11 @@ def _parse_mysql_argv(argv):
     return opts
 
 
+def hdr(name):
+    """Column header text: GTK treats '_' in a TreeViewColumn title as a mnemonic."""
+    return name.replace("_", "__")
+
+
 def q_ident(name):
     return "`" + name.replace("`", "``") + "`"
 
@@ -217,7 +222,7 @@ class DBPanel(Gtk.Window):
             rend.set_property("width-chars", 40)
             if editable:
                 rend.connect("edited", self._cell_edited, i)
-            col = Gtk.TreeViewColumn(c + (" 🔑" if c in pk else ""), rend, text=i)
+            col = Gtk.TreeViewColumn(hdr(c) + (" (PK)" if c in pk else ""), rend, text=i)
             col.set_resizable(True); col.set_sort_column_id(i)
             tv.append_column(col)
         tv.connect("button-press-event", self._grid_click)
@@ -260,8 +265,7 @@ class DBPanel(Gtk.Window):
             mi = Gtk.MenuItem(label="Delete row"); mi.connect("activate", lambda m: self._delete_row(path))
             menu.append(mi)
             mi = Gtk.MenuItem(label="Set cell to NULL")
-            col = hit[1]
-            idx = [c.get_title().replace(" 🔑", "") for c in tv.get_columns()].index(col.get_title().replace(" 🔑", ""))
+            idx = tv.get_columns().index(hit[1])
             mi.connect("activate", lambda m: self._cell_edited(None, path, NULL, idx))
             menu.append(mi)
         mi = Gtk.MenuItem(label="Copy row as INSERT"); mi.connect("activate", lambda m: self._copy_insert(path))
@@ -336,7 +340,7 @@ class DBPanel(Gtk.Window):
             store.append((r + [""] * len(cols))[:len(cols)])
         tv = Gtk.TreeView(model=store)
         for i, c in enumerate(cols):
-            col = Gtk.TreeViewColumn(c, Gtk.CellRendererText(), text=i); col.set_resizable(True)
+            col = Gtk.TreeViewColumn(hdr(c), Gtk.CellRendererText(), text=i); col.set_resizable(True)
             tv.append_column(col)
         self.struct_sw.add(tv); tv.show_all()
         self.create_view.get_buffer().set_text(create.replace("\\n", "\n"))
