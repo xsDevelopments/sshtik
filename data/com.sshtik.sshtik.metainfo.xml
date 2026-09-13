@@ -61,6 +61,19 @@
     <color type="primary" scheme_preference="dark">#1c4e6b</color>
   </branding>
   <releases>
+    <release version="0.1.3" date="2026-09-13">
+      <description>
+        <ul>
+          <li>MySQL password prompt for restricted users (mysql -u name -p)</li>
+          <li>Login banner is preserved on connect; no screen-clear</li>
+          <li>Esc closes the file and database panels</li>
+          <li>Fixed the connection dropping when saving an edited remote file</li>
+          <li>Clearer transfer errors; one failed file no longer aborts the batch</li>
+          <li>Terminal inset, zebra rows and column lines, database cell padding</li>
+          <li>F4 opens Connect; About dialog and version readout with build info</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.2" date="2026-09-13">
       <description>
         <ul>
