@@ -5,9 +5,29 @@ import time
 
 import gi
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk, GdkPixbuf
+from gi.repository import Gtk, GdkPixbuf, Gio, GLib
 
 WEBSITE = "https://sshtik.com"
+
+# A subdued grey pilotfish for the toolbar's About affordance — embedded so it
+# ships with every install type without a separate data file.
+_FISH_SVG = b"""<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <g fill="#9a9a9a">
+    <ellipse cx="13" cy="12" rx="8" ry="4.3"/>
+    <path d="M20 12 L24 8.2 L23 12 L24 15.8 Z"/>
+    <path d="M10 8 Q13 4.5 16 7.6 Z"/>
+    <path d="M11 16 Q13 19 16 16.4 Z"/>
+  </g>
+  <circle cx="7.5" cy="11.4" r="1.15" fill="#3a3a3a"/>
+</svg>"""
+
+
+def toolbar_icon(size=18):
+    try:
+        stream = Gio.MemoryInputStream.new_from_bytes(GLib.Bytes.new(_FISH_SVG))
+        return GdkPixbuf.Pixbuf.new_from_stream_at_scale(stream, size, size, True, None)
+    except Exception:
+        return None
 
 
 def _pkg_dir():

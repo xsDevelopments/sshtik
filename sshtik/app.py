@@ -14,7 +14,7 @@ from .terminal import SSHTerminal
 from .filepanel import FilePanel
 from .dbpanel import DBPanel
 from .ui import install_css
-from .about import show_about, build_summary
+from .about import show_about, build_summary, app_version, toolbar_icon
 
 
 def ssh_config_hosts():
@@ -133,9 +133,7 @@ class MainWindow(Gtk.Window):
         spacer = Gtk.SeparatorToolItem()
         spacer.set_draw(False); spacer.set_expand(True)
         tb.insert(spacer, -1)
-        about = Gtk.ToolButton(icon_name="help-about", label="About")
-        about.connect("clicked", lambda b: show_about(self))
-        tb.insert(about, -1)
+        tb.insert(self._about_item(), -1)
 
         self.notebook = Gtk.Notebook()
         self.notebook.set_scrollable(True)
@@ -144,6 +142,23 @@ class MainWindow(Gtk.Window):
         box.pack_start(self.notebook, True, True, 0)
         self.add(box)
         self.connect("key-press-event", self.on_key)
+
+    def _about_item(self):
+        """Quiet 'v0.1.2 [fish]' affordance at the toolbar's right edge."""
+        item = Gtk.ToolItem()
+        btn = Gtk.Button(relief=Gtk.ReliefStyle.NONE)
+        btn.set_tooltip_text("About sshTIK")
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        lbl = Gtk.Label(label="v" + app_version())
+        lbl.get_style_context().add_class("dim-label")
+        row.pack_start(lbl, False, False, 0)
+        icon = toolbar_icon()
+        if icon is not None:
+            row.pack_start(Gtk.Image.new_from_pixbuf(icon), False, False, 0)
+        btn.add(row)
+        btn.connect("clicked", lambda b: show_about(self))
+        item.add(btn)
+        return item
 
     def _on_close(self, *_):
         config["window"]["main"] = list(self.get_size())
