@@ -14,6 +14,7 @@ from .terminal import SSHTerminal
 from .filepanel import FilePanel
 from .dbpanel import DBPanel
 from .ui import install_css
+from .about import show_about, build_summary
 
 
 def ssh_config_hosts():
@@ -122,13 +123,19 @@ class MainWindow(Gtk.Window):
         self.connect("destroy", Gtk.main_quit)
 
         tb = Gtk.Toolbar()
-        for label, icon, cb in (("Connect", "network-server", self.on_connect),
+        for label, icon, cb in (("Connect (F4)", "network-server", self.on_connect),
                                 ("Files (F5)", "folder", self.on_files),
                                 ("Database (F6)", "x-office-spreadsheet", self.on_db)):
             b = Gtk.ToolButton(icon_name=icon, label=label)
             b.set_is_important(True)
             b.connect("clicked", cb)
             tb.insert(b, -1)
+        spacer = Gtk.SeparatorToolItem()
+        spacer.set_draw(False); spacer.set_expand(True)
+        tb.insert(spacer, -1)
+        about = Gtk.ToolButton(icon_name="help-about", label="About")
+        about.connect("clicked", lambda b: show_about(self))
+        tb.insert(about, -1)
 
         self.notebook = Gtk.Notebook()
         self.notebook.set_scrollable(True)
@@ -150,6 +157,7 @@ class MainWindow(Gtk.Window):
     def on_key(self, w, ev):
         ctrl = ev.state & Gdk.ModifierType.CONTROL_MASK
         shift = ev.state & Gdk.ModifierType.SHIFT_MASK
+        if ev.keyval == Gdk.KEY_F4: self.on_connect(); return True
         if ev.keyval == Gdk.KEY_F5: self.on_files(); return True
         if ev.keyval == Gdk.KEY_F6: self.on_db(); return True
         if ctrl and shift and ev.keyval in (Gdk.KEY_T, Gdk.KEY_t): self.on_connect(); return True
@@ -276,7 +284,10 @@ def main():
     ap = argparse.ArgumentParser(description="SSH shell with SFTP/DB helpers")
     ap.add_argument("target", nargs="?", help="[user@]host (honours ~/.ssh/config)")
     ap.add_argument("-p", "--port", type=int, default=None)
+    ap.add_argument("-V", "--version", action="store_true", help="print version and exit")
     args = ap.parse_args()
+    if args.version:
+        print(build_summary()); return
 
     install_css()
     w = MainWindow()
