@@ -17,6 +17,7 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GLib, Gio, Pango
 
 from .config import config, CACHE_DIR
+from .ui import stripe
 
 DND_TARGET = "application/x-sshtik-files"
 _TARGETS = [Gtk.TargetEntry.new(DND_TARGET, Gtk.TargetFlags.SAME_APP, 0),
@@ -121,11 +122,15 @@ class _Pane(Gtk.Box):
         self.view = Gtk.TreeView(model=self.store)
         for i, (t, w) in enumerate((("Name", 260), ("Size", 70), ("Modified", 130), ("Perms", 80))):
             rend = Gtk.CellRendererText()
-            if i == 0: rend.set_property("ellipsize", Pango.EllipsizeMode.MIDDLE)
+            if i == 0:
+                rend.set_property("ellipsize", Pango.EllipsizeMode.MIDDLE)
+                rend.set_property("xpad", 8)
             col = Gtk.TreeViewColumn(t, rend, text=i)
             col.set_resizable(True); col.set_min_width(w if i == 0 else 0)
             col.set_sort_column_id(self.COL_BYTES if i == 1 else i)
             self.view.append_column(col)
+        self.view.set_grid_lines(Gtk.TreeViewGridLines.VERTICAL)
+        stripe(self.view)
         self.view.connect("row-activated", self._activated)
         self.view.connect("button-press-event", self._click)
         self.view.connect("key-press-event", self._key)

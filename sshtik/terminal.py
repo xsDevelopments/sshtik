@@ -10,6 +10,7 @@ gi.require_version("Vte", "2.91")
 from gi.repository import Gtk, Gdk, Vte, GLib
 
 from .config import config
+from .ui import TERMINAL_MARGIN
 
 # Marker we ask the remote shell to print once so we learn its PID.
 _PID_MARKER = "__SSHPANEL_PID__"
@@ -23,6 +24,8 @@ class SSHTerminal(Vte.Terminal):
         self.set_scrollback_lines(10000)
         self.set_font_scale(config.get("font_scale", 1.0))
         self.set_mouse_autohide(True)
+        for side in ("start", "end", "top", "bottom"):
+            getattr(self, f"set_margin_{side}")(TERMINAL_MARGIN)
         self.connect("key-press-event", self._on_key)
         self.connect("button-press-event", self._on_button)
 

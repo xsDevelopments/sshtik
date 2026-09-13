@@ -13,6 +13,7 @@ from .connection import SSHConnection
 from .terminal import SSHTerminal
 from .filepanel import FilePanel
 from .dbpanel import DBPanel
+from .ui import install_css
 
 
 def ssh_config_hosts():
@@ -202,6 +203,7 @@ class MainWindow(Gtk.Window):
         term = SSHTerminal(conn)
         term.hops = [conn]  # connection chain; grows when the user ssh's onward
         sw = Gtk.ScrolledWindow(); sw.add(term)
+        sw.get_style_context().add_class("terminal-frame")
 
         label = Gtk.Box(spacing=4)
         label.pack_start(Gtk.Label(label=f"{conn.user + '@' if conn.user else ''}{host}"), True, True, 0)
@@ -276,6 +278,7 @@ def main():
     ap.add_argument("-p", "--port", type=int, default=None)
     args = ap.parse_args()
 
+    install_css()
     w = MainWindow()
     w.show_all()
     if args.target:
