@@ -13,7 +13,7 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GLib, Pango
 
 from .config import config
-from .ui import stripe, close_on_escape
+from .ui import stripe, close_on_escape, pad
 
 NULL = "NULL"  # how `mysql --batch` prints NULL; typing it in a cell sets SQL NULL
 
@@ -253,7 +253,7 @@ class DBPanel(Gtk.Window):
         tv = Gtk.TreeView(model=self.grid_store)
         tv.set_grid_lines(Gtk.TreeViewGridLines.VERTICAL)
         for i, c in enumerate(cols):
-            rend = Gtk.CellRendererText(editable=editable, ellipsize=Pango.EllipsizeMode.END)
+            rend = pad(Gtk.CellRendererText(editable=editable, ellipsize=Pango.EllipsizeMode.END))
             rend.set_property("width-chars", 40)
             if editable:
                 rend.connect("edited", self._cell_edited, i)
@@ -376,7 +376,7 @@ class DBPanel(Gtk.Window):
             store.append((r + [""] * len(cols))[:len(cols)])
         tv = Gtk.TreeView(model=store)
         for i, c in enumerate(cols):
-            col = Gtk.TreeViewColumn(hdr(c), Gtk.CellRendererText(), text=i); col.set_resizable(True)
+            col = Gtk.TreeViewColumn(hdr(c), pad(Gtk.CellRendererText()), text=i); col.set_resizable(True)
             tv.append_column(col)
         stripe(tv)
         self.struct_sw.add(tv); tv.show_all()

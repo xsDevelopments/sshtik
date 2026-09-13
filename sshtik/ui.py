@@ -26,6 +26,15 @@ def _stripe_cell(column, renderer, model, it, _data):
     renderer.set_property("cell-background-set", odd)
 
 
+CELL_XPAD, CELL_YPAD = 6, 3  # breathing room inside grid cells (like html cellpadding)
+
+
+def pad(renderer):
+    renderer.set_property("xpad", CELL_XPAD)
+    renderer.set_property("ypad", CELL_YPAD)
+    return renderer
+
+
 def stripe(treeview):
     """Shade every second row. Call after all columns are added."""
     for col in treeview.get_columns():
