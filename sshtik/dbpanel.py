@@ -217,7 +217,7 @@ class DBPanel(Gtk.Window):
         for r in rows:
             self.grid_store.append((r + [""] * len(cols))[:len(cols)])
         tv = Gtk.TreeView(model=self.grid_store)
-        tv.set_grid_lines(Gtk.TreeViewGridLines.BOTH)
+        tv.set_grid_lines(Gtk.TreeViewGridLines.VERTICAL)
         for i, c in enumerate(cols):
             rend = Gtk.CellRendererText(editable=editable, ellipsize=Pango.EllipsizeMode.END)
             rend.set_property("width-chars", 40)
