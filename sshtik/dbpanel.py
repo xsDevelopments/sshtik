@@ -13,7 +13,7 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GLib, Pango
 
 from .config import config
-from .ui import stripe
+from .ui import stripe, close_on_escape
 
 NULL = "NULL"  # how `mysql --batch` prints NULL; typing it in a cell sets SQL NULL
 
@@ -73,6 +73,7 @@ class DBPanel(Gtk.Window):
         self.grid_cols = []
         self.grid_store = None
         self.connect("delete-event", self._on_close)
+        close_on_escape(self)
 
         fg = conn.foreground_process()
         if fg and fg[1] in ("mysql", "mariadb"):

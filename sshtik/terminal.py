@@ -1,6 +1,5 @@
 """VTE terminal widget wired to a paramiko shell channel."""
 import os
-import re
 import threading
 import tty
 
@@ -11,10 +10,6 @@ from gi.repository import Gtk, Gdk, Vte, GLib
 
 from .config import config
 from .ui import TERMINAL_MARGIN
-
-# Marker we ask the remote shell to print once so we learn its PID.
-_PID_MARKER = "__SSHPANEL_PID__"
-_PID_RE = re.compile(rb"__SSHPANEL_PID__=(\d+)")
 
 
 class SSHTerminal(Vte.Terminal):
@@ -40,9 +35,9 @@ class SSHTerminal(Vte.Terminal):
                                     rows=self.get_row_count())
         self.connect("size-allocate", self._on_resize)
 
-        # Ask the shell for its PID, then bump prompt. Output is harmless
-        # noise in scrollback; hide it with a clear if desired.
-        self.chan.send(f' echo {_PID_MARKER}=$$; clear\n')
+        # Learn the shell's PID via the side channel (nothing is typed into
+        # the session, so the login banner/motd stays as the server sent it).
+        threading.Thread(target=conn.discover_shell_pid, daemon=True).start()
 
         threading.Thread(target=self._pump_remote_to_pty, daemon=True).start()
         threading.Thread(target=self._pump_pty_to_remote, daemon=True).start()
@@ -54,10 +49,6 @@ class SSHTerminal(Vte.Terminal):
             if not data:
                 GLib.idle_add(self.feed, b"\r\n[connection closed]\r\n")
                 return
-            if self.conn.shell_pid is None:
-                m = _PID_RE.search(data)
-                if m:
-                    self.conn.shell_pid = int(m.group(1))
             os.write(self._slave, data)
 
     # keyboard -> remote

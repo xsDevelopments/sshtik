@@ -76,6 +76,23 @@ class SSHConnection:
         return stdout.channel.recv_exit_status(), out, err
 
     # ---- side-channel introspection ------------------------------------
+    def discover_shell_pid(self, attempts=10, delay=0.2):
+        """Find the interactive shell of this connection without typing into it.
+
+        All channels of one SSH connection are children of the same
+        per-connection sshd process, so from an exec channel $PPID is that
+        sshd and the child that owns a pty is our shell."""
+        import time
+        for _ in range(attempts):
+            rc, out, _ = self.run("ps -o pid=,tty= --ppid $PPID 2>/dev/null")
+            for line in out.splitlines():
+                parts = line.split()
+                if len(parts) == 2 and parts[1].startswith(("pts", "tty")) and parts[0].isdigit():
+                    self.shell_pid = int(parts[0])
+                    return self.shell_pid
+            time.sleep(delay)
+        return None
+
     def shell_cwd(self):
         """Current directory of the interactive shell (needs shell_pid)."""
         if not self.shell_pid:

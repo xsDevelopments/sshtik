@@ -31,3 +31,13 @@ def stripe(treeview):
     for col in treeview.get_columns():
         for rend in col.get_cells():
             col.set_cell_data_func(rend, _stripe_cell, None)
+
+
+def close_on_escape(window):
+    """Close a helper window on Esc — unless a child (e.g. a cell being
+    edited) consumed the key first, which is why this is connect_after."""
+    def on_key(w, ev):
+        if ev.keyval == Gdk.KEY_Escape:
+            w.close(); return True
+        return False
+    window.connect_after("key-press-event", on_key)

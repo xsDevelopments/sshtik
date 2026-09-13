@@ -17,7 +17,7 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GLib, Gio, Pango
 
 from .config import config, CACHE_DIR
-from .ui import stripe
+from .ui import stripe, close_on_escape
 
 DND_TARGET = "application/x-sshtik-files"
 _TARGETS = [Gtk.TargetEntry.new(DND_TARGET, Gtk.TargetFlags.SAME_APP, 0),
@@ -293,6 +293,7 @@ class FilePanel(Gtk.Window):
         if parent:
             self.set_transient_for(parent)
         self.connect("delete-event", self._on_close)
+        close_on_escape(self)
         self._monitors = []  # keep edit-file monitors alive
 
         self.local = _Pane(self, LocalFS(), "local")
