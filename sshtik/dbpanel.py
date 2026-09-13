@@ -13,6 +13,7 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GLib, Pango
 
 from .config import config
+from .ui import stripe
 
 NULL = "NULL"  # how `mysql --batch` prints NULL; typing it in a cell sets SQL NULL
 
@@ -226,6 +227,7 @@ class DBPanel(Gtk.Window):
             col.set_resizable(True); col.set_sort_column_id(i)
             tv.append_column(col)
         tv.connect("button-press-event", self._grid_click)
+        stripe(tv)
         self.grid_sw.add(tv); tv.show_all()
         self.grid_view = tv
         note = "editable" if editable else ("read-only: no primary key" if self.current_table else "read-only")
@@ -342,6 +344,7 @@ class DBPanel(Gtk.Window):
         for i, c in enumerate(cols):
             col = Gtk.TreeViewColumn(hdr(c), Gtk.CellRendererText(), text=i); col.set_resizable(True)
             tv.append_column(col)
+        stripe(tv)
         self.struct_sw.add(tv); tv.show_all()
         self.create_view.get_buffer().set_text(create.replace("\\n", "\n"))
 
