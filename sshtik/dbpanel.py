@@ -18,6 +18,10 @@ from .ui import stripe
 NULL = "NULL"  # how `mysql --batch` prints NULL; typing it in a cell sets SQL NULL
 
 
+class AuthError(RuntimeError):
+    """mysql refused the credentials; the panel will ask for a password and retry."""
+
+
 def _parse_mysql_argv(argv):
     """Pull user/host/port/db out of a mysql client's argv. Password is
     scrubbed by mysql itself so it never appears here."""
@@ -152,13 +156,36 @@ class DBPanel(Gtk.Window):
             self.run_query(); return True
 
     def _bg(self, fn, *args):
-        """Run fn(*args) in a thread; exceptions land in the status line."""
+        """Run fn(*args) in a thread; exceptions land in the status line.
+        An AuthError prompts for the MySQL password (main thread) and retries."""
         def work():
             try:
                 fn(*args)
+            except AuthError as e:
+                GLib.idle_add(self._ask_password_then, fn, args, str(e))
             except Exception as e:
                 GLib.idle_add(self.status.set_text, str(e))
         threading.Thread(target=work, daemon=True).start()
+
+    def _ask_password_then(self, fn, args, err):
+        user = self.opts["user"] or "(default user)"
+        d = Gtk.Dialog(title="MySQL password", transient_for=self, flags=0)
+        d.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "OK", Gtk.ResponseType.OK)
+        box = d.get_content_area(); box.set_spacing(6)
+        box.set_margin_start(12); box.set_margin_end(12); box.set_margin_top(6)
+        box.add(Gtk.Label(label=f"Password for MySQL user {user} on {self.conn.host}:", xalign=0))
+        if self.password is not None:
+            box.add(Gtk.Label(label="(previous password was rejected)", xalign=0))
+        e = Gtk.Entry(visibility=False, activates_default=True); box.add(e)
+        note = Gtk.Label(label="Kept in memory for this window only; never written to disk.", xalign=0)
+        note.get_style_context().add_class("dim-label"); box.add(note)
+        d.set_default_response(Gtk.ResponseType.OK); d.show_all()
+        ok = d.run() == Gtk.ResponseType.OK
+        pw = e.get_text(); d.destroy()
+        if not ok:
+            self.status.set_text(err); return
+        self.password = pw
+        self._bg(fn, *args)
 
     # ---- running SQL over an exec channel ------------------------------
     def _mysql_cmd(self, sql, db=None):
@@ -167,15 +194,21 @@ class DBPanel(Gtk.Window):
         if o["user"]: parts += ["-u", o["user"]]
         if o["host"]: parts += ["-h", o["host"]]
         if o["port"]: parts += ["-P", o["port"]]
-        if self.password: parts += [f"-p{self.password}"]
         use = db or self.current_db or o["db"]
         if use: parts += [use]
-        return " ".join(shlex.quote(p) for p in parts) + " -e " + shlex.quote(sql)
+        cmd = " ".join(shlex.quote(p) for p in parts) + " -e " + shlex.quote(sql)
+        if self.password is not None:
+            # via the environment, not -p, so it never shows in `ps`
+            cmd = "MYSQL_PWD=" + shlex.quote(self.password) + " " + cmd
+        return cmd
 
     def query(self, sql, db=None):
         rc, out, err = self.conn.run(self._mysql_cmd(sql, db), timeout=120)
         if rc != 0:
-            raise RuntimeError(err.strip() or f"mysql exited {rc}")
+            msg = err.strip() or f"mysql exited {rc}"
+            if "Access denied" in msg and "using password" in msg:
+                raise AuthError(msg)
+            raise RuntimeError(msg)
         rows = [line.split("\t") for line in out.splitlines()]
         return (rows[0], rows[1:]) if rows else ([], [])
 
