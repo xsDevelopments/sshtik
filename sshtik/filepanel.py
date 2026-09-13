@@ -382,6 +382,7 @@ class FilePanel(Gtk.Window):
             # 2. run them
             done_bytes, nfiles = 0, sum(1 for j in jobs if j[2] is not None)
             count = 0
+            errors = []
             for s, d, size in jobs:
                 if size is None:  # directory
                     try: dst.fs.mkdir(d)
@@ -393,9 +394,20 @@ class FilePanel(Gtk.Window):
                 def cb(x, _t, name=name, base_done=base_done):
                     frac = (base_done + x) / total if total else 1
                     GLib.idle_add(self._progress, frac, f"{count}/{nfiles} {name}")
-                (sftp.put if upload else sftp.get)(s, d, callback=cb)
+                try:
+                    (sftp.put if upload else sftp.get)(s, d, callback=cb)
+                except Exception as e:
+                    errors.append((name, e))
                 done_bytes += size
-            GLib.idle_add(self._progress, 1.0, f"Done: {nfiles} file(s), {_human(total)}")
+            if errors:
+                ok = nfiles - len(errors)
+                fname, err = errors[0]
+                more = f" (+{len(errors) - 1} more)" if len(errors) > 1 else ""
+                GLib.idle_add(self._progress, 0.0, "")
+                GLib.idle_add(self.status.set_text,
+                              f"{fname}: {err}{more} — {ok}/{nfiles} transferred")
+            else:
+                GLib.idle_add(self._progress, 1.0, f"Done: {nfiles} file(s), {_human(total)}")
             GLib.idle_add(dst.refresh)
         self.bg(work)
 
