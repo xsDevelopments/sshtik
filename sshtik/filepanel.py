@@ -294,7 +294,8 @@ class FilePanel(Gtk.Window):
             self.set_transient_for(parent)
         self.connect("delete-event", self._on_close)
         close_on_escape(self)
-        self._monitors = []  # keep edit-file monitors alive
+        self._monitors = []      # keep edit-file monitors alive
+        self._edit_timers = {}   # local path -> pending debounce timer id
 
         self.local = _Pane(self, LocalFS(), "local")
         self.remote = _Pane(self, RemoteFS(conn), "remote")
@@ -427,10 +428,18 @@ class FilePanel(Gtk.Window):
     def _edited(self, mon, f, other, ev, local, remote_path):
         if ev not in (Gio.FileMonitorEvent.CHANGES_DONE_HINT, Gio.FileMonitorEvent.CREATED):
             return
+        # A single save fires several change events (write, truncate, rename).
+        # Debounce so one save = one upload, 400ms after the last event.
+        if local in self._edit_timers:
+            GLib.source_remove(self._edit_timers[local])
+        self._edit_timers[local] = GLib.timeout_add(
+            400, self._upload_edit, local, remote_path)
+
+    def _upload_edit(self, local, remote_path):
+        self._edit_timers.pop(local, None)
         def work():
-            # many editors write a temp file and rename; small delay avoids half-written reads
-            time.sleep(0.2)
             self.conn.sftp().put(local, remote_path)
             GLib.idle_add(self.status.set_text, f"Uploaded {remote_path} at {time.strftime('%H:%M:%S')}")
             GLib.idle_add(self.remote.refresh)
         self.bg(work)
+        return False  # one-shot timer

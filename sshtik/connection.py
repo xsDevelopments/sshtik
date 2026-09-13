@@ -7,7 +7,42 @@ The whole app hangs off a single authenticated paramiko Transport:
 """
 import os
 import shlex
+import threading
 import paramiko
+
+
+class _LockingSFTP:
+    """Serialises access to a paramiko SFTPClient across threads.
+
+    paramiko multiplexes one channel per SFTPClient and is not safe for
+    concurrent callers: two operations interleaving their packets desync the
+    stream and can bring down the whole transport. Every public method is
+    proxied under a single lock, and a dropped channel is transparently
+    reopened."""
+    def __init__(self, factory):
+        self._factory = factory
+        self._sftp = None
+        self._lock = threading.RLock()
+
+    def _client(self):
+        chan = self._sftp.get_channel() if self._sftp is not None else None
+        if self._sftp is None or chan is None or chan.closed:
+            self._sftp = self._factory()
+        return self._sftp
+
+    def __getattr__(self, name):
+        def method(*args, **kwargs):
+            with self._lock:
+                return getattr(self._client(), name)(*args, **kwargs)
+        return method
+
+    def close(self):
+        with self._lock:
+            if self._sftp is not None:
+                try:
+                    self._sftp.close()
+                finally:
+                    self._sftp = None
 
 
 def resolve_ssh_config(host, user=None, port=None):
@@ -65,7 +100,7 @@ class SSHConnection:
 
     def sftp(self):
         if self._sftp is None:
-            self._sftp = self._client.open_sftp()
+            self._sftp = _LockingSFTP(self._client.open_sftp)
         return self._sftp
 
     def run(self, cmd, timeout=10):
