@@ -1,7 +1,6 @@
 """Version / build introspection and the About dialog."""
 import os
 import subprocess
-import time
 
 import gi
 gi.require_version("Gtk", "3.0")
@@ -75,11 +74,25 @@ def build_info():
         except Exception:
             pass
     if info["date"] is None:
-        try:
-            info["date"] = time.strftime("%Y-%m-%d", time.localtime(os.path.getmtime(__file__)))
-        except Exception:
-            pass
+        # Installed build: the release date lives in the metainfo we shipped.
+        # (File mtimes are unreliable — Flatpak zeroes them to the epoch.)
+        info["date"] = _installed_release_date()
     return info
+
+
+def _installed_release_date():
+    here = os.path.abspath(__file__)
+    if "/lib/" not in here:
+        return None
+    prefix = here.split("/lib/")[0]  # e.g. /app for a Flatpak
+    mi = os.path.join(prefix, "share", "metainfo", "com.sshtik.sshtik.metainfo.xml")
+    try:
+        import xml.etree.ElementTree as ET
+        rels = ET.parse(mi).getroot().find("releases")
+        first = rels.find("release") if rels is not None else None
+        return first.get("date") if first is not None else None
+    except Exception:
+        return None
 
 
 def build_summary(info=None):
