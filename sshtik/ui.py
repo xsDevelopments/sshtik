@@ -10,7 +10,7 @@ _CSS = b"""
 """
 TERMINAL_MARGIN = 8
 
-_STRIPE = Gdk.RGBA(0.5, 0.5, 0.5, 0.10)  # translucent grey: lighter on dark themes, darker on light
+_STRIPE = Gdk.RGBA(0.5, 0.5, 0.5, 0.14)  # translucent grey: lighter on dark themes, darker on light
 
 
 def install_css():
