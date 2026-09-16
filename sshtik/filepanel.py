@@ -369,12 +369,12 @@ class FilePanel(Gtk.Window):
         focus = self.get_focus()
         k = ev.keyval
         # function keys act on the active pane regardless of what has focus
-        if k == Gdk.KEY_F2: self._active.mkdir(); return True
+        if k == Gdk.KEY_F2: self._active.rename_selected(); return True
         if k == Gdk.KEY_F3: self.view_active(); return True
         if k == Gdk.KEY_F4: self.edit_active(); return True
         if k == Gdk.KEY_F5: self.copy_active(); return True
         if k == Gdk.KEY_F6: self.move_active(); return True
-        if k == Gdk.KEY_F7: self._active.rename_selected(); return True
+        if k == Gdk.KEY_F7: self._active.mkdir(); return True
         if k == Gdk.KEY_F8: self._active.delete_selected(); return True
         if k in (Gdk.KEY_Tab, Gdk.KEY_ISO_Left_Tab):
             self._switch_sides(); return True
@@ -397,12 +397,12 @@ class FilePanel(Gtk.Window):
                  ("/", "Location", self._focus_path),
                  ("+", "Select", lambda: self._pattern_popover(self._active, True)),
                  ("−", "Deselect", lambda: self._pattern_popover(self._active, False)),
-                 ("F2", "New Folder", lambda: self._active.mkdir()),
+                 ("F2", "Rename", lambda: self._active.rename_selected()),
                  ("F3", "View", self.view_active),
                  ("F4", "Edit", self.edit_active),
                  ("F5", "Copy", self.copy_active),
                  ("F6", "Move", self.move_active),
-                 ("F7", "Rename", lambda: self._active.rename_selected()),
+                 ("F7", "New Folder", lambda: self._active.mkdir()),
                  ("F8", "Delete", lambda: self._active.delete_selected()))
         for key, label, cb in items:
             b = Gtk.Button(relief=Gtk.ReliefStyle.NONE)
