@@ -7,8 +7,46 @@ The whole app hangs off a single authenticated paramiko Transport:
 """
 import os
 import shlex
+import socket
+import stat
 import threading
 import paramiko
+
+
+def _is_live_agent(path):
+    try:
+        if not path or not stat.S_ISSOCK(os.stat(path).st_mode):
+            return False
+    except OSError:
+        return False
+    try:
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(0.3)
+        s.connect(path)
+        s.close()
+        return True
+    except OSError:
+        return False
+
+
+def ensure_ssh_agent():
+    """Point SSH_AUTH_SOCK at a live ssh-agent when it isn't already.
+
+    Launched from a desktop/panel menu the app inherits no shell profile, so
+    SSH_AUTH_SOCK is often unset; paramiko then can't use the agent and falls
+    back to (usually passphrase-protected) key files, prompting for a password.
+    Probe the common agent sockets and adopt the first that answers."""
+    if _is_live_agent(os.environ.get("SSH_AUTH_SOCK")):
+        return os.environ["SSH_AUTH_SOCK"]
+    xdg = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+    for c in (os.path.expanduser("~/.ssh/ssh-agent.sock"),
+              os.path.join(xdg, "ssh-agent.socket"),
+              os.path.join(xdg, "gnupg/S.gpg-agent.ssh"),
+              os.path.join(xdg, "keyring/ssh")):
+        if _is_live_agent(c):
+            os.environ["SSH_AUTH_SOCK"] = c
+            return c
+    return os.environ.get("SSH_AUTH_SOCK")
 
 
 class _LockingSFTP:
@@ -68,6 +106,7 @@ class SSHConnection:
         """`via`: an existing SSHConnection to tunnel through (like ProxyJump).
         `resolved`: {"hostname","user","port"} already resolved on the via host
         (so the via host's ~/.ssh/config applies, not ours)."""
+        ensure_ssh_agent()  # so agent keys work even when launched from a menu
         r = resolved or resolve_ssh_config(host, user, port)
         self.host = host
         self.hostname = r["hostname"]
