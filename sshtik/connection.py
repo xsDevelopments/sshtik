@@ -29,24 +29,59 @@ def _is_live_agent(path):
         return False
 
 
-def ensure_ssh_agent():
-    """Point SSH_AUTH_SOCK at a live ssh-agent when it isn't already.
+def _agent_key_count(path):
+    """How many identities the agent at `path` holds, or None if unreachable.
+    (Listing keys never triggers a passphrase/pinentry prompt.)"""
+    if not _is_live_agent(path):
+        return None
+    old = os.environ.get("SSH_AUTH_SOCK")
+    os.environ["SSH_AUTH_SOCK"] = path
+    try:
+        agent = paramiko.Agent()
+        n = len(agent.get_keys())
+        try:
+            agent.close()
+        except Exception:
+            pass
+        return n
+    except Exception:
+        return None
+    finally:
+        if old is None:
+            os.environ.pop("SSH_AUTH_SOCK", None)
+        else:
+            os.environ["SSH_AUTH_SOCK"] = old
 
-    Launched from a desktop/panel menu the app inherits no shell profile, so
-    SSH_AUTH_SOCK is often unset; paramiko then can't use the agent and falls
-    back to (usually passphrase-protected) key files, prompting for a password.
-    Probe the common agent sockets and adopt the first that answers."""
-    if _is_live_agent(os.environ.get("SSH_AUTH_SOCK")):
-        return os.environ["SSH_AUTH_SOCK"]
+
+def ensure_ssh_agent():
+    """Point SSH_AUTH_SOCK at the ssh-agent that actually holds keys.
+
+    Launched from a desktop/panel menu the app inherits the session's
+    SSH_AUTH_SOCK, which on many desktops is a live but *empty* gpg-agent /
+    gnome-keyring socket. paramiko then finds no identities and falls back to
+    passphrase-protected key files (a password prompt). Rank the known agent
+    sockets and adopt one that holds keys, preferring the user's dedicated
+    fixed-path agent, then the inherited socket."""
+    dedicated = os.path.expanduser("~/.ssh/ssh-agent.sock")
+    cur = os.environ.get("SSH_AUTH_SOCK")
     xdg = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
-    for c in (os.path.expanduser("~/.ssh/ssh-agent.sock"),
+    live, seen = [], set()
+    for p in (dedicated, cur,
               os.path.join(xdg, "ssh-agent.socket"),
               os.path.join(xdg, "gnupg/S.gpg-agent.ssh"),
               os.path.join(xdg, "keyring/ssh")):
-        if _is_live_agent(c):
-            os.environ["SSH_AUTH_SOCK"] = c
-            return c
-    return os.environ.get("SSH_AUTH_SOCK")
+        if not p or p in seen:
+            continue
+        seen.add(p)
+        n = _agent_key_count(p)
+        if n is not None:
+            live.append((p, n))
+    if not live:
+        return cur
+    # has-keys first, then the dedicated agent, then the inherited one, then count
+    best = max(live, key=lambda it: (it[1] > 0, it[0] == dedicated, it[0] == cur, it[1]))[0]
+    os.environ["SSH_AUTH_SOCK"] = best
+    return best
 
 
 class _LockingSFTP:
