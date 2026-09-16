@@ -10,7 +10,7 @@ import threading
 
 import gi
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk, Gdk, GLib, Pango
+from gi.repository import Gtk, Gdk, GLib, Pango, GObject
 
 from .config import config
 from .ui import stripe, close_on_escape, pad
@@ -56,6 +56,14 @@ def q_val(v):
     if v is None or v == NULL:
         return "NULL"
     return "'" + v.replace("\\", "\\\\").replace("'", "\\'") + "'"
+
+
+def _human_bytes(n):
+    n = float(n or 0)
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+        if n < 1024 or unit == "TiB":
+            return f"{int(n)} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1024
 
 
 class DBPanel(Gtk.Window):
@@ -432,7 +440,7 @@ class DBPanel(Gtk.Window):
         parent = self.tree_store.iter_parent(it)
         if parent is None:
             self.current_db = self.tree_store[it][0]
-            self.status.set_text(f"USE {q_ident(self.current_db)}")
+            self._load_overview(self.current_db)
             return
         db, table = self.tree_store[parent][0], self.tree_store[it][0]
         if table == "(loading…)":
@@ -441,6 +449,66 @@ class DBPanel(Gtk.Window):
         sql = f"SELECT * FROM {q_ident(table)} LIMIT 200"
         self.editor.get_buffer().set_text(sql)
         self.run_query(sql, table=(db, table))
+
+    def _load_overview(self, db):
+        """HeidiSQL-style table-size listing for a database."""
+        q = ("SELECT TABLE_NAME, COALESCE(TABLE_ROWS,0), "
+             "COALESCE(DATA_LENGTH,0)+COALESCE(INDEX_LENGTH,0) "
+             "FROM information_schema.TABLES "
+             f"WHERE TABLE_SCHEMA={q_val(db)} AND TABLE_TYPE='BASE TABLE' "
+             "ORDER BY (COALESCE(DATA_LENGTH,0)+COALESCE(INDEX_LENGTH,0)) DESC")
+        self.status.set_text(f"Reading table sizes for {q_ident(db)}\u2026")
+        def work():
+            _, rows = self.query(q, db=db)
+            GLib.idle_add(self._show_overview, db, rows)
+        self._bg(work)
+
+    def _show_overview(self, db, rows):
+        for c in self.grid_sw.get_children():
+            self.grid_sw.remove(c)
+        self.nb.set_current_page(0)
+        self.current_table = None
+        self.grid_store = None   # Export/Insert stay inert on the overview
+        self.grid_cols = []
+
+        parsed, maxb, total = [], 0, 0
+        for r in rows:
+            name = r[0]
+            try: nrows = int(r[1])
+            except (TypeError, ValueError): nrows = 0
+            try: nbytes = int(r[2])
+            except (TypeError, ValueError): nbytes = 0
+            parsed.append((name, nrows, nbytes))
+            maxb = max(maxb, nbytes); total += nbytes
+
+        store = Gtk.ListStore(str, str, str, int, GObject.TYPE_INT64, GObject.TYPE_INT64)
+        for name, nrows, nbytes in parsed:
+            pct = int(round(nbytes * 100.0 / maxb)) if maxb else 0
+            store.append([name, f"{nrows:,}", _human_bytes(nbytes), pct, nbytes, nrows])
+
+        tv = Gtk.TreeView(model=store)
+        tv.set_grid_lines(Gtk.TreeViewGridLines.VERTICAL)
+        c0 = Gtk.TreeViewColumn("Table", pad(Gtk.CellRendererText(ellipsize=Pango.EllipsizeMode.END)), text=0)
+        c0.set_resizable(True); c0.set_expand(True); c0.set_sort_column_id(0)
+        tv.append_column(c0)
+        rr = pad(Gtk.CellRendererText()); rr.set_property("xalign", 1.0)
+        c1 = Gtk.TreeViewColumn("Rows", rr, text=1); c1.set_alignment(1.0)
+        c1.set_sort_column_id(5); c1.set_resizable(True); tv.append_column(c1)
+        pr = Gtk.CellRendererProgress()
+        c2 = Gtk.TreeViewColumn("Size", pr, value=3, text=2)
+        c2.set_min_width(170); c2.set_sort_column_id(4); c2.set_resizable(True)
+        tv.append_column(c2)
+        tv.connect("row-activated", self._overview_activated, db)
+        stripe(tv)
+        self.grid_sw.add(tv); tv.show_all()
+        self.status.set_text(f"{db}: {len(parsed)} tables \u00b7 {_human_bytes(total)} total")
+
+    def _overview_activated(self, tv, path, col, db):
+        name = tv.get_model()[path][0]
+        self.current_db = db
+        sql = f"SELECT * FROM {q_ident(name)} LIMIT 200"
+        self.editor.get_buffer().set_text(sql)
+        self.run_query(sql, table=(db, name))
 
     def _tree_selected(self, sel):
         model, it = sel.get_selected()
