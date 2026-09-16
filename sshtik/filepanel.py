@@ -3,6 +3,7 @@
 Features: recursive transfers, drag-and-drop between panes (and from a desktop
 file manager onto the remote pane), right-click Delete/Rename/New folder/chmod,
 double-click a remote file to edit it locally with auto-upload on save."""
+import fnmatch
 import json
 import os
 import shutil
@@ -176,6 +177,28 @@ class _Pane(Gtk.Box):
         model, rows = self.view.get_selection().get_selected_rows()
         return [(model[r][self.COL_NAME], model[r][self.COL_KIND]) for r in rows if model[r][self.COL_NAME] != ".."]
 
+    def apply_pattern(self, text, select=True):
+        """Select/deselect rows whose name matches any space/';'-separated glob
+        (case-insensitive). '*' and '*.*' both mean everything (DOS idiom)."""
+        patterns = [p for p in text.replace(";", " ").split() if p]
+        if not patterns:
+            return
+        def matches(name):
+            low = name.lower()
+            for p in patterns:
+                if p in ("*", "*.*") or fnmatch.fnmatch(low, p.lower()):
+                    return True
+            return False
+        sel = self.view.get_selection()
+        n = 0
+        for row in self.store:
+            if row[self.COL_NAME] == ".." or not matches(row[self.COL_NAME]):
+                continue
+            (sel.select_iter if select else sel.unselect_iter)(row.iter)
+            n += 1
+        self.panel.status.set_text(
+            f"{'Selected' if select else 'Deselected'} {n} matching {' '.join(patterns)}")
+
     # ---- events ---------------------------------------------------------
     def _activated(self, view, tree_path, col):
         name, kind = self.store[tree_path][self.COL_NAME], self.store[tree_path][self.COL_KIND]
@@ -342,7 +365,33 @@ class FilePanel(Gtk.Window):
             pane.path_entry.grab_focus()
             pane.path_entry.select_region(0, -1)
             return True
+        if ev.keyval in (Gdk.KEY_plus, Gdk.KEY_KP_Add) and not isinstance(focus, Gtk.Entry):
+            self._pattern_popover(self.remote if (focus and focus.is_ancestor(self.remote)) else self.local, True)
+            return True
+        if ev.keyval in (Gdk.KEY_minus, Gdk.KEY_KP_Subtract) and not isinstance(focus, Gtk.Entry):
+            self._pattern_popover(self.remote if (focus and focus.is_ancestor(self.remote)) else self.local, False)
+            return True
         return False
+
+    def _pattern_popover(self, pane, select):
+        pop = Gtk.Popover()
+        pop.set_relative_to(pane.view)
+        pop.set_position(Gtk.PositionType.TOP)
+        box = Gtk.Box(spacing=6)
+        for m in ("start", "end", "top", "bottom"):
+            getattr(box, f"set_margin_{m}")(6)
+        box.add(Gtk.Label(label=("Select" if select else "Deselect") + " pattern:"))
+        entry = Gtk.Entry()
+        entry.set_placeholder_text("*.php   img*   *")
+        entry.set_width_chars(18)
+        box.add(entry)
+        pop.add(box)
+        def go(*_):
+            pane.apply_pattern(entry.get_text(), select=select)
+            pop.popdown()
+        entry.connect("activate", go)
+        pop.show_all()
+        entry.grab_focus()
 
     def _on_close(self, *_):
         config["window"]["files"] = list(self.get_size())
