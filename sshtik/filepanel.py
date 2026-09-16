@@ -294,6 +294,7 @@ class FilePanel(Gtk.Window):
             self.set_transient_for(parent)
         self.connect("delete-event", self._on_close)
         close_on_escape(self)
+        self.connect("key-press-event", self._on_key)
         self._monitors = []      # keep edit-file monitors alive
         self._edit_timers = {}   # local path -> pending debounce timer id
 
@@ -327,6 +328,22 @@ class FilePanel(Gtk.Window):
         self.bg(lambda: GLib.idle_add(self.remote.load, conn.shell_cwd() or "."))
 
     # ---- helpers --------------------------------------------------------
+    def _on_key(self, w, ev):
+        focus = self.get_focus()
+        in_local = bool(focus and focus.is_ancestor(self.local))
+        # Tab / Shift+Tab: jump between the two file lists
+        if ev.keyval in (Gdk.KEY_Tab, Gdk.KEY_ISO_Left_Tab):
+            (self.remote if in_local else self.local).view.grab_focus()
+            return True
+        # '/' focuses the active pane's path box with the text selected — but
+        # not while already editing a field, where '/' is a normal character.
+        if ev.keyval == Gdk.KEY_slash and not isinstance(focus, Gtk.Entry):
+            pane = self.remote if (focus and focus.is_ancestor(self.remote)) else self.local
+            pane.path_entry.grab_focus()
+            pane.path_entry.select_region(0, -1)
+            return True
+        return False
+
     def _on_close(self, *_):
         config["window"]["files"] = list(self.get_size())
         config["window"]["files_paned"] = self.paned.get_position()
