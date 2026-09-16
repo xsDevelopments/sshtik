@@ -324,6 +324,10 @@ class FilePanel(Gtk.Window):
         self.local = _Pane(self, LocalFS(), "local")
         self.remote = _Pane(self, RemoteFS(conn), "remote")
         self.remote.fs.name = f"Remote ({conn.host})"
+        self._active = self.local
+        for pane in (self.local, self.remote):
+            pane.view.connect("focus-in-event",
+                              lambda w, e, p=pane: (setattr(self, "_active", p), False)[1])
 
         mid = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         mid.set_valign(Gtk.Align.CENTER)
@@ -345,33 +349,76 @@ class FilePanel(Gtk.Window):
         vb.pack_start(self.paned, True, True, 0)
         vb.pack_start(self.progress, False, False, 0)
         vb.pack_start(self.status, False, False, 0)
+        vb.pack_start(self._hint_bar(), False, False, 0)
         self.add(vb)
 
         self.local.load(config["local_dir"].get(conn.host) or os.getcwd())
         self.bg(lambda: GLib.idle_add(self.remote.load, conn.shell_cwd() or "."))
 
     # ---- helpers --------------------------------------------------------
+    def _switch_sides(self):
+        target = self.remote if self._active is self.local else self.local
+        target.view.grab_focus()
+        self._active = target
+
+    def _focus_path(self):
+        self._active.path_entry.grab_focus()
+        self._active.path_entry.select_region(0, -1)
+
     def _on_key(self, w, ev):
         focus = self.get_focus()
-        in_local = bool(focus and focus.is_ancestor(self.local))
-        # Tab / Shift+Tab: jump between the two file lists
-        if ev.keyval in (Gdk.KEY_Tab, Gdk.KEY_ISO_Left_Tab):
-            (self.remote if in_local else self.local).view.grab_focus()
-            return True
-        # '/' focuses the active pane's path box with the text selected — but
-        # not while already editing a field, where '/' is a normal character.
-        if ev.keyval == Gdk.KEY_slash and not isinstance(focus, Gtk.Entry):
-            pane = self.remote if (focus and focus.is_ancestor(self.remote)) else self.local
-            pane.path_entry.grab_focus()
-            pane.path_entry.select_region(0, -1)
-            return True
-        if ev.keyval in (Gdk.KEY_plus, Gdk.KEY_KP_Add) and not isinstance(focus, Gtk.Entry):
-            self._pattern_popover(self.remote if (focus and focus.is_ancestor(self.remote)) else self.local, True)
-            return True
-        if ev.keyval in (Gdk.KEY_minus, Gdk.KEY_KP_Subtract) and not isinstance(focus, Gtk.Entry):
-            self._pattern_popover(self.remote if (focus and focus.is_ancestor(self.remote)) else self.local, False)
-            return True
+        k = ev.keyval
+        # function keys act on the active pane regardless of what has focus
+        if k == Gdk.KEY_F5: self.copy_active(); return True
+        if k == Gdk.KEY_F6: self.move_active(); return True
+        if k == Gdk.KEY_F7: self._active.rename_selected(); return True
+        if k == Gdk.KEY_F8: self._active.delete_selected(); return True
+        if k in (Gdk.KEY_Tab, Gdk.KEY_ISO_Left_Tab):
+            self._switch_sides(); return True
+        # the rest are text-ish, so don't fire while editing a field
+        if isinstance(focus, Gtk.Entry):
+            return False
+        if k == Gdk.KEY_slash:
+            self._focus_path(); return True
+        if k in (Gdk.KEY_plus, Gdk.KEY_KP_Add):
+            self._pattern_popover(self._active, True); return True
+        if k in (Gdk.KEY_minus, Gdk.KEY_KP_Subtract):
+            self._pattern_popover(self._active, False); return True
         return False
+
+    def _hint_bar(self):
+        bar = Gtk.Box(spacing=2)
+        bar.get_style_context().add_class("toolbar")
+        items = (("Esc", "Close", self.close),
+                 ("Tab", "Switch", self._switch_sides),
+                 ("/", "Location", self._focus_path),
+                 ("+", "Select", lambda: self._pattern_popover(self._active, True)),
+                 ("−", "Deselect", lambda: self._pattern_popover(self._active, False)),
+                 ("F5", "Copy", self.copy_active),
+                 ("F6", "Move", self.move_active),
+                 ("F7", "Rename", lambda: self._active.rename_selected()),
+                 ("F8", "Delete", lambda: self._active.delete_selected()))
+        for key, label, cb in items:
+            b = Gtk.Button(relief=Gtk.ReliefStyle.NONE)
+            b.set_can_focus(False)  # keep keyboard focus on the file lists
+            lbl = Gtk.Label()
+            lbl.set_markup(f"<b>{key}</b> {label}")
+            b.add(lbl)
+            b.connect("clicked", lambda _b, cb=cb: cb())
+            bar.pack_start(b, True, True, 0)
+        return bar
+
+    def copy_active(self):
+        self.transfer(self._active)
+
+    def move_active(self):
+        pane = self._active
+        items = [pane.join(n) for n, _ in pane.selected()]
+        if not items:
+            return
+        dst = self.remote if pane is self.local else self.local
+        if self.confirm(f"Move {len(items)} item(s) to {dst.fs.name}: {dst.cwd}?"):
+            self.transfer_paths(pane, dst, items, move=True)
 
     def _pattern_popover(self, pane, select):
         pop = Gtk.Popover()
@@ -427,7 +474,7 @@ class FilePanel(Gtk.Window):
         dst = self.remote if src_pane is self.local else self.local
         self.transfer_paths(src_pane, dst, paths)
 
-    def transfer_paths(self, src, dst, paths):
+    def transfer_paths(self, src, dst, paths, move=False):
         if not paths: return
         upload = src is self.local
         sftp = self.conn.sftp()
@@ -473,7 +520,13 @@ class FilePanel(Gtk.Window):
                 GLib.idle_add(self.status.set_text,
                               f"{fname}: {err}{more} — {ok}/{nfiles} transferred")
             else:
-                GLib.idle_add(self._progress, 1.0, f"Done: {nfiles} file(s), {_human(total)}")
+                verb = "Moved" if move else "Copied"
+                GLib.idle_add(self._progress, 1.0, f"{verb} {nfiles} file(s), {_human(total)}")
+                if move:  # delete sources only after a fully clean copy
+                    for p in paths:
+                        try: src.fs.remove(p)
+                        except Exception: pass
+                    GLib.idle_add(src.refresh)
             GLib.idle_add(dst.refresh)
         self.bg(work)
 
