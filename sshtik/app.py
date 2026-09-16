@@ -77,7 +77,7 @@ class ConnectDialog(Gtk.Dialog):
 
     def _reload(self):
         self.store.clear()
-        for h in config["hosts"]:
+        for h in sorted(config["hosts"], key=lambda h: (h.get("name") or h["host"]).lower()):
             self.store.append([h.get("name") or h["host"], h["host"], h.get("user", ""), int(h.get("port") or 22), "saved"])
         for h in ssh_config_hosts():
             self.store.append([h["name"] + "  (ssh config)", h["host"], h["user"], h["port"], "ssh_config"])
