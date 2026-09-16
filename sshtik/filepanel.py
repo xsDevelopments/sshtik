@@ -369,6 +369,9 @@ class FilePanel(Gtk.Window):
         focus = self.get_focus()
         k = ev.keyval
         # function keys act on the active pane regardless of what has focus
+        if k == Gdk.KEY_F2: self._active.mkdir(); return True
+        if k == Gdk.KEY_F3: self.view_active(); return True
+        if k == Gdk.KEY_F4: self.edit_active(); return True
         if k == Gdk.KEY_F5: self.copy_active(); return True
         if k == Gdk.KEY_F6: self.move_active(); return True
         if k == Gdk.KEY_F7: self._active.rename_selected(); return True
@@ -394,6 +397,9 @@ class FilePanel(Gtk.Window):
                  ("/", "Location", self._focus_path),
                  ("+", "Select", lambda: self._pattern_popover(self._active, True)),
                  ("−", "Deselect", lambda: self._pattern_popover(self._active, False)),
+                 ("F2", "New Folder", lambda: self._active.mkdir()),
+                 ("F3", "View", self.view_active),
+                 ("F4", "Edit", self.edit_active),
                  ("F5", "Copy", self.copy_active),
                  ("F6", "Move", self.move_active),
                  ("F7", "Rename", lambda: self._active.rename_selected()),
@@ -534,23 +540,61 @@ class FilePanel(Gtk.Window):
         self.progress.set_fraction(min(frac, 1.0)); self.progress.set_text(text)
 
     # ---- edit remote file locally ----------------------------------------
-    def edit_remote(self, remote_path):
+    # ---- view (default app) vs edit (text editor) -----------------------
+    def _cache_path(self, remote_path):
         local = os.path.join(CACHE_DIR, "edit", self.conn.host, remote_path.lstrip("/"))
         os.makedirs(os.path.dirname(local), exist_ok=True)
+        return local
 
+    def _default_open(self, path):
+        """Open with the desktop's default handler (browser for html, etc.)."""
+        Gio.AppInfo.launch_default_for_uri(Gio.File.new_for_path(path).get_uri(), None)
+
+    def _text_editor_launch(self, path):
+        """Open in a text editor: the configured one, else the system default
+        for text/plain, else the generic handler."""
+        editor = config.get("editor") or ""
+        if editor and not os.path.exists("/.flatpak-info"):
+            subprocess.Popen(editor.split() + [path]); return
+        app = None
+        if not os.path.exists("/.flatpak-info"):
+            app = Gio.AppInfo.get_default_for_type("text/plain", False)
+        if app is not None:
+            app.launch([Gio.File.new_for_path(path)], None)
+        else:
+            self._default_open(path)  # Flatpak: portal opens the default text app
+
+    def view_active(self):
+        pane = self._active
+        files = [n for n, k in pane.selected() if k == "file"]
+        if not files:
+            return
+        if pane.side == "local":
+            self._default_open(pane.join(files[0]))
+        else:
+            rp = pane.join(files[0]); local = self._cache_path(rp)
+            self.bg(lambda: (self.conn.sftp().get(rp, local),
+                             GLib.idle_add(self._default_open, local)))
+
+    def edit_active(self):
+        pane = self._active
+        files = [n for n, k in pane.selected() if k == "file"]
+        if not files:
+            return
+        if pane.side == "local":
+            self._text_editor_launch(pane.join(files[0]))
+        else:
+            self.edit_remote(pane.join(files[0]))
+
+    def edit_remote(self, remote_path):
+        local = self._cache_path(remote_path)
         def work():
             self.conn.sftp().get(remote_path, local)
             GLib.idle_add(self._open_editor, local, remote_path)
         self.bg(work)
 
     def _open_editor(self, local, remote_path):
-        editor = config.get("editor") or ""
-        # Inside a Flatpak a configured host editor isn't reachable; the default
-        # handler goes through the desktop portal, which is.
-        if editor and not os.path.exists("/.flatpak-info"):
-            subprocess.Popen(editor.split() + [local])
-        else:
-            Gio.AppInfo.launch_default_for_uri(Gio.File.new_for_path(local).get_uri(), None)
+        self._text_editor_launch(local)
         mon = Gio.File.new_for_path(local).monitor_file(Gio.FileMonitorFlags.NONE, None)
         mon.connect("changed", self._edited, local, remote_path)
         self._monitors.append(mon)
