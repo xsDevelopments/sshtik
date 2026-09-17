@@ -61,6 +61,18 @@
     <color type="primary" scheme_preference="dark">#1c4e6b</color>
   </branding>
   <releases>
+    <release version="0.2.0" date="2026-09-17">
+      <description>
+        <p>Dual-pane MySQL commander, and a Midnight-Commander-style file panel.</p>
+        <ul>
+          <li>F6 is now a two-pane MySQL browser: local server on the left, the SSH host's server on the right, with copy/move of tables and whole databases between them (mysqldump | mysql)</li>
+          <li>Databases and tables shown with size bars; F5 Copy, F6 Move, F7 Create database, F8 Drop, F3 view rows; per-pane connect with optional remembered logins</li>
+          <li>File panel: function-key bar (F2 Rename, F3 View, F4 Edit, F5 Copy, F6 Move, F7 New Folder, F8 Delete), Tab to switch panes, wildcard +/- select, '/' to jump to the path</li>
+          <li>Finds the ssh-agent that holds keys when launched from a desktop menu, so key auth works without a terminal</li>
+          <li>Table-size overview when a database is selected; saved hosts sorted alphabetically</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.3" date="2026-09-13">
       <description>
         <ul>
