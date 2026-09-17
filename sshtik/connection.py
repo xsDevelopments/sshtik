@@ -177,9 +177,17 @@ class SSHConnection:
             self._sftp = _LockingSFTP(self._client.open_sftp)
         return self._sftp
 
-    def run(self, cmd, timeout=10):
-        """Run a command on a fresh exec channel. Returns (rc, stdout, stderr)."""
+    def run(self, cmd, timeout=10, input=None):
+        """Run a command on a fresh exec channel. Returns (rc, stdout, stderr).
+        `input` (str or bytes) is written to the command's stdin — used to pipe
+        a mysqldump into `mysql` on this host."""
         stdin, stdout, stderr = self._client.exec_command(cmd, timeout=timeout)
+        if input is not None:
+            if isinstance(input, str):
+                input = input.encode()
+            stdin.write(input)
+            stdin.flush()
+            stdin.channel.shutdown_write()
         out = stdout.read().decode(errors="replace")
         err = stderr.read().decode(errors="replace")
         return stdout.channel.recv_exit_status(), out, err

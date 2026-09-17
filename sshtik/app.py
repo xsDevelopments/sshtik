@@ -13,6 +13,7 @@ from .connection import SSHConnection
 from .terminal import SSHTerminal
 from .filepanel import FilePanel
 from .dbpanel import DBPanel
+from .dbcommander import DBCommander
 from .ui import install_css
 from .about import show_about, build_summary, app_version, toolbar_icon
 
@@ -292,7 +293,7 @@ class MainWindow(Gtk.Window):
         t = self.current()
         if not t: return
         conn = self.active_connection(t)
-        if conn: DBPanel(conn, parent=self).show_all()
+        if conn: DBCommander(conn, parent=self).show_all()
 
 
 def main():
