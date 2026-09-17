@@ -11,11 +11,14 @@ import shlex
 import subprocess
 import threading
 
+import paramiko
+
 import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GLib, Pango, GObject
 
 from .config import config
+from .connection import SSHConnection
 from .ui import stripe, close_on_escape, pad
 from .dbpanel import q_ident, q_val, _human_bytes, _parse_mysql_argv, AuthError
 
@@ -302,6 +305,7 @@ class DBCommander(Gtk.Window):
         vb.pack_start(self._hint_bar(), False, False, 0)
         self.add(vb)
 
+        self._owned_conns = []   # SSH connections opened for panes (not the tab's)
         self._bg(self._startup)
 
     # ---- infra ---------------------------------------------------------
@@ -359,62 +363,155 @@ class DBCommander(Gtk.Window):
         config["window"]["dbc"] = list(self.get_size())
         config["window"]["dbc_paned"] = self.paned.get_position()
         config.save()
+        for c in self._owned_conns:
+            try: c.close()
+            except Exception: pass
         return False
+
+    def _ask_password(self, prompt):
+        d = Gtk.Dialog(title="Password", transient_for=self, flags=0)
+        d.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "OK", Gtk.ResponseType.OK)
+        box = d.get_content_area(); box.set_spacing(6); box.set_margin_start(12); box.set_margin_end(12)
+        box.add(Gtk.Label(label=prompt))
+        e = Gtk.Entry(visibility=False, activates_default=True); box.add(e)
+        d.set_default_response(Gtk.ResponseType.OK); d.show_all()
+        pw = e.get_text() if d.run() == Gtk.ResponseType.OK else None
+        d.destroy()
+        return pw
 
     def _progress(self, frac, text):
         self.progress.set_fraction(min(frac, 1.0)); self.progress.set_text(text)
 
     # ---- connect / credentials -----------------------------------------
     def connect_endpoint(self, pane):
+        """Point a pane at Local MySQL or at any SSH host (mysql runs there)."""
         ep = pane.endpoint
-        d = Gtk.Dialog(title=f"Connect — {ep.label} MySQL", transient_for=self, flags=0)
+        from .app import ssh_config_hosts
+        d = Gtk.Dialog(title=f"Connect — {pane.side} pane", transient_for=self, flags=0)
         d.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Connect", Gtk.ResponseType.OK)
-        grid = Gtk.Grid(row_spacing=6, column_spacing=6, margin=12)
-        entries = {}
-        defaults = {"user": ep.opts["user"] or ("root" if ep.is_local() else ""),
-                    "host": ep.opts["host"] or "", "port": str(ep.opts["port"] or "")}
-        for i, k in enumerate(("user", "host", "port")):
-            grid.attach(Gtk.Label(label=k.capitalize(), xalign=1), 0, i, 1, 1)
-            e = Gtk.Entry(text=defaults[k]); entries[k] = e; grid.attach(e, 1, i, 1, 1)
-        grid.attach(Gtk.Label(label="Password", xalign=1), 0, 3, 1, 1)
-        pw = Gtk.Entry(visibility=False, activates_default=True); grid.attach(pw, 1, 3, 1, 1)
-        if ep.last_error:
-            err = Gtk.Label(xalign=0, wrap=True); err.set_max_width_chars(48)
-            err.set_markup(f"<span foreground='#d9534f'>{GLib.markup_escape_text(ep.last_error)}</span>")
-            grid.attach(err, 0, 4, 2, 1)
-        if ep.is_local():
-            hint = Gtk.Label(xalign=0, wrap=True)
-            hint.get_style_context().add_class("dim-label")
-            hint.set_text("Tip: MariaDB 'root' often uses socket auth (no password). "
-                          "Use a password user, or create one with: sudo mysql.")
-            grid.attach(hint, 0, 5, 2, 1)
+        d.set_default_size(600, 430)
+        box = d.get_content_area(); box.set_spacing(6)
+        for m in ("start", "end", "top", "bottom"):
+            getattr(box, f"set_margin_{m}")(10)
+
+        local_chk = Gtk.CheckButton(label="Local MySQL (this machine)")
+        local_chk.set_active(ep.is_local())
+        box.add(local_chk)
+
+        body = Gtk.Box(spacing=10)
+        store = Gtk.ListStore(str, str, str, int)
+        for h in sorted(config["hosts"], key=lambda h: (h.get("name") or h["host"]).lower()):
+            store.append([h.get("name") or h["host"], h["host"], h.get("user", ""), int(h.get("port") or 22)])
+        for h in ssh_config_hosts():
+            store.append([h["name"] + "  (ssh config)", h["host"], h["user"], h["port"]])
+        hv = Gtk.TreeView(model=store)
+        hv.append_column(Gtk.TreeViewColumn("SSH hosts", Gtk.CellRendererText(), text=0))
+        hsw = Gtk.ScrolledWindow(); hsw.add(hv); hsw.set_size_request(220, 210)
+        body.pack_start(hsw, False, False, 0)
+
+        grid = Gtk.Grid(row_spacing=6, column_spacing=6)
+        fields = {}
+        for i, (k, lab) in enumerate((("host", "SSH Host"), ("user", "SSH User"), ("port", "SSH Port"),
+                                      ("myuser", "MySQL user (opt)"), ("mypass", "MySQL password (opt)"))):
+            grid.attach(Gtk.Label(label=lab, xalign=1), 0, i, 1, 1)
+            e = Gtk.Entry()
+            if k == "mypass":
+                e.set_visibility(False)
+            fields[k] = e; grid.attach(e, 1, i, 1, 1)
+        body.pack_start(grid, True, True, 0)
+        box.add(body)
+
+        def on_sel(sel):
+            m, it = sel.get_selected()
+            if it:
+                fields["host"].set_text(m[it][1]); fields["user"].set_text(m[it][2])
+                fields["port"].set_text("" if m[it][3] == 22 else str(m[it][3]))
+        hv.get_selection().connect("changed", on_sel)
+
+        hint = Gtk.Label(xalign=0, wrap=True); hint.get_style_context().add_class("dim-label")
+        hint.set_text("SSH: opens a hidden session and runs mysql on that host (socket auth) — "
+                      "leave MySQL user blank to use the box's default (root when you SSH as root).")
+        box.add(hint)
         remember = Gtk.CheckButton(label="Remember this login")
         remember.set_active(_login_key(ep) in config.get("db_logins", {}))
-        grid.attach(remember, 0, 6, 2, 1)
-        warn = Gtk.Label(xalign=0, wrap=True)
-        warn.set_markup("<span foreground='#d9534f' size='small'>Saved in plain text in "
-                        "~/.config/sshtik/config.json — anyone who can use this app or read "
-                        "that file can then reach this database.</span>")
-        grid.attach(warn, 0, 7, 2, 1)
-        d.get_content_area().add(grid); d.set_default_response(Gtk.ResponseType.OK); d.show_all()
-        if d.run() == Gtk.ResponseType.OK:
-            ep.opts["user"] = entries["user"].get_text().strip() or None
-            ep.opts["host"] = entries["host"].get_text().strip() or None
-            ep.opts["port"] = entries["port"].get_text().strip() or None
-            ep.password = pw.get_text() or None
-            _store_login(ep, remember.get_active())
-            d.destroy()
-            pane.level_db = None
-            def work():
-                ep.probe()
-                if ep.available is True:
-                    GLib.idle_add(pane.reload)
-                else:
-                    GLib.idle_add(self.status.set_text, f"{ep.label}: {ep.last_error or 'cannot connect'}")
-                    GLib.idle_add(pane._set_header)
-            self._bg(work)
+        box.add(remember)
+        if ep.last_error:
+            err = Gtk.Label(xalign=0, wrap=True)
+            err.set_markup(f"<span foreground='#d9534f' size='small'>{GLib.markup_escape_text(ep.last_error)}</span>")
+            box.add(err)
+
+        def sync(*_):
+            loc = local_chk.get_active()
+            hsw.set_sensitive(not loc)
+            for k in ("host", "user", "port"):
+                fields[k].set_sensitive(not loc)
+        local_chk.connect("toggled", sync); sync()
+
+        d.set_default_response(Gtk.ResponseType.OK); d.show_all()
+        ok = d.run() == Gtk.ResponseType.OK
+        v = {k: e.get_text().strip() for k, e in fields.items()}
+        loc, rem = local_chk.get_active(), remember.get_active()
+        d.destroy()
+        if not ok:
+            return
+        if loc:
+            self._apply_local(pane, v["myuser"], v["mypass"], rem)
+        elif v["host"]:
+            self._apply_ssh(pane, v["host"], v["user"], v["port"], v["myuser"], v["mypass"], rem)
         else:
-            d.destroy()
+            self.status.set_text("Enter an SSH host, or tick Local MySQL")
+
+    def _finish_endpoint(self, pane, remember):
+        ep = pane.endpoint
+        _store_login(ep, remember)
+        pane.level_db = None
+        def work():
+            ep.probe()
+            if ep.available is True:
+                GLib.idle_add(pane.reload)
+            else:
+                GLib.idle_add(self.status.set_text, f"{ep.label}: {ep.last_error or 'cannot connect'}")
+                GLib.idle_add(pane._set_header)
+        self._bg(work)
+
+    def _apply_local(self, pane, myuser, mypass, remember):
+        ep = pane.endpoint
+        ep.conn = None; ep.label = "local"
+        ep.opts = {"user": myuser or None, "host": None, "port": None, "db": None, "defaults": []}
+        ep.password = mypass or None
+        self._finish_endpoint(pane, remember)
+
+    def _apply_ssh(self, pane, host, user, port, myuser, mypass, remember, sshpass=None):
+        GLib.idle_add(self.status.set_text, f"Connecting to {host}…")
+        def work():
+            try:
+                conn = SSHConnection(host, user=user or None,
+                                     port=int(port) if port else None, password=sshpass)
+            except paramiko.AuthenticationException:
+                GLib.idle_add(self._retry_ssh, pane, host, user, port, myuser, mypass, remember)
+                return
+            except Exception as e:
+                GLib.idle_add(self.status.set_text, f"SSH {host}: {e}")
+                return
+            self._owned_conns.append(conn)
+            ep = pane.endpoint
+            ep.conn = conn; ep.label = host
+            ep.opts = {"user": myuser or None, "host": None, "port": None, "db": None, "defaults": []}
+            ep.password = mypass or None
+            _store_login(ep, remember)
+            pane.level_db = None
+            ep.probe()
+            if ep.available is True:
+                GLib.idle_add(pane.reload)
+            else:
+                GLib.idle_add(self.status.set_text, f"{host}: {ep.last_error or 'MySQL not reachable on this host'}")
+                GLib.idle_add(pane._set_header)
+        self._bg(work)
+
+    def _retry_ssh(self, pane, host, user, port, myuser, mypass, remember):
+        pw = self._ask_password(f"SSH password for {user or ''}@{host}:")
+        if pw is not None:
+            self._apply_ssh(pane, host, user, port, myuser, mypass, remember, sshpass=pw)
 
     def confirm(self, text):
         md = Gtk.MessageDialog(transient_for=self, message_type=Gtk.MessageType.QUESTION,
