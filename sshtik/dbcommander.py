@@ -18,6 +18,37 @@ from .config import config
 from .ui import stripe, close_on_escape, pad
 from .dbpanel import q_ident, q_val, _human_bytes, _parse_mysql_argv, AuthError
 
+# Logins entered this session but not saved to disk (survives Esc + reopen).
+_SESSION_LOGINS = {}
+
+
+def _login_key(ep):
+    return "local" if ep.is_local() else f"ssh:{ep.conn.host}"
+
+
+def _apply_saved_login(ep):
+    """Prefill an endpoint from a remembered (disk) or session-cached login."""
+    key = _login_key(ep)
+    data = config.get("db_logins", {}).get(key) or _SESSION_LOGINS.get(key)
+    if not data:
+        return False
+    ep.opts.update(user=data.get("user"), host=data.get("host"), port=data.get("port"))
+    ep.password = data.get("password")
+    return True
+
+
+def _store_login(ep, remember):
+    """Cache the endpoint's login for the session; persist it if remember."""
+    key = _login_key(ep)
+    data = {"user": ep.opts["user"], "host": ep.opts["host"],
+            "port": ep.opts["port"], "password": ep.password}
+    _SESSION_LOGINS[key] = data
+    logins = config.setdefault("db_logins", {})
+    if remember:
+        logins[key] = data; config.save()
+    elif key in logins:
+        del logins[key]; config.save()
+
 
 # ---------------------------------------------------------------------------
 class MySQLEndpoint:
@@ -238,6 +269,8 @@ class DBCommander(Gtk.Window):
         fg = conn.foreground_process()
         if fg and fg[1] in ("mysql", "mariadb"):
             self.right_ep.opts = _parse_mysql_argv(fg[2])
+        _apply_saved_login(self.left_ep)
+        _apply_saved_login(self.right_ep)
 
         self.left = _DBPane(self, self.left_ep, "left")
         self.right = _DBPane(self, self.right_ep, "right")
@@ -347,12 +380,21 @@ class DBCommander(Gtk.Window):
             hint.set_text("Tip: MariaDB 'root' often uses socket auth (no password). "
                           "Use a password user, or create one with: sudo mysql.")
             grid.attach(hint, 0, 5, 2, 1)
+        remember = Gtk.CheckButton(label="Remember this login")
+        remember.set_active(_login_key(ep) in config.get("db_logins", {}))
+        grid.attach(remember, 0, 6, 2, 1)
+        warn = Gtk.Label(xalign=0, wrap=True)
+        warn.set_markup("<span foreground='#d9534f' size='small'>Saved in plain text in "
+                        "~/.config/sshtik/config.json — anyone who can use this app or read "
+                        "that file can then reach this database.</span>")
+        grid.attach(warn, 0, 7, 2, 1)
         d.get_content_area().add(grid); d.set_default_response(Gtk.ResponseType.OK); d.show_all()
         if d.run() == Gtk.ResponseType.OK:
             ep.opts["user"] = entries["user"].get_text().strip() or None
             ep.opts["host"] = entries["host"].get_text().strip() or None
             ep.opts["port"] = entries["port"].get_text().strip() or None
             ep.password = pw.get_text() or None
+            _store_login(ep, remember.get_active())
             d.destroy()
             pane.level_db = None
             def work():

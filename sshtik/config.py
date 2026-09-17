@@ -13,6 +13,7 @@ _DEFAULTS = {
     "history": {},          # {host: [sql, ...]}  newest last
     "editor": "",           # command for editing remote files; empty = xdg-open
     "local_dir": {},        # {host: last local dir}
+    "db_logins": {},        # {endpoint-key: {user,host,port,password}} — opt-in, plain text
 }
 
 
