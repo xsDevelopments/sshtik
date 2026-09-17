@@ -128,10 +128,11 @@ class MySQLEndpoint:
     def drop_table(self, db, table):
         self.query(f"DROP TABLE {q_ident(db)}.{q_ident(table)}")
 
-    def copy_to(self, dst, db, table=None):
+    def copy_to(self, dst, db, table=None, dst_db=None):
         sql = self.dump(db, table)
-        dst.query(f"CREATE DATABASE IF NOT EXISTS {q_ident(db)}")
-        dst.load(sql, db)
+        target = dst_db or db
+        dst.query(f"CREATE DATABASE IF NOT EXISTS {q_ident(target)}")
+        dst.load(sql, target)
 
 
 # ---------------------------------------------------------------------------
@@ -412,8 +413,14 @@ class DBCommander(Gtk.Window):
             return
         db = src.level_db
         verb = "Move" if move else "Copy"
+        if src.level_db:                       # copying tables
+            into = dst.level_db or src.level_db
+            dest_desc = f"{dst.endpoint.label} database `{into}`"
+        else:                                  # copying whole databases (keep names)
+            into = None
+            dest_desc = f"{dst.endpoint.label} ({dst.endpoint.target()})"
         what = ", ".join(n for n, _ in items[:4]) + (" …" if len(items) > 4 else "")
-        if not self.confirm(f"{verb} {len(items)} object(s) to {dst.endpoint.label} ({dst.endpoint.target()})?\n{what}"):
+        if not self.confirm(f"{verb} {len(items)} object(s) to {dest_desc}?\n{what}"):
             return
 
         def work():
@@ -424,8 +431,8 @@ class DBCommander(Gtk.Window):
                     src.endpoint.copy_to(dst.endpoint, name)
                     if move:
                         src.endpoint.drop_database(name)
-                else:  # table
-                    src.endpoint.copy_to(dst.endpoint, db, name)
+                else:  # table -> the destination pane's current database
+                    src.endpoint.copy_to(dst.endpoint, db, name, dst_db=into)
                     if move:
                         src.endpoint.drop_table(db, name)
                 done += 1
