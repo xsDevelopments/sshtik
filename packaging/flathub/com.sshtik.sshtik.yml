@@ -13,6 +13,7 @@ finish-args:
   - --socket=wayland
   - --filesystem=home          # local pane of the file panel, ~/.ssh, editors
   - --socket=ssh-auth          # ssh-agent
+  - --talk-name=org.freedesktop.Flatpak   # run the host's mysql/mysqldump for the local DB pane
 modules:
   # --- build deps for VTE that the GNOME SDK does not carry -----------------
   - name: simdutf

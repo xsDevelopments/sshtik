@@ -3,8 +3,9 @@ host's server on the right, with copy/move of tables and databases between
 them. Not a HeidiSQL clone — a transfer tool that speaks MySQL.
 
 Each pane is a MySQLEndpoint that runs mysql/mysqldump either locally (via
-subprocess) or on the SSH host (via an exec channel). F5 copies the highlighted
-table or database to the other side (mysqldump | mysql); F6 moves it."""
+subprocess — or the host's client via `flatpak-spawn --host` when sandboxed)
+or on the SSH host (via an exec channel). F5 copies the highlighted table or
+database to the other side (mysqldump | mysql); F6 moves it."""
 import os
 import shlex
 import subprocess
@@ -83,6 +84,13 @@ class MySQLEndpoint:
             env = dict(os.environ)
             if self.password is not None:
                 env["MYSQL_PWD"] = self.password
+            if os.path.exists("/.flatpak-info"):
+                # Sandboxed: no mysql client inside the Flatpak, so run the
+                # host's mysql/mysqldump (which also reads the host's ~/.my.cnf).
+                spawn = ["flatpak-spawn", "--host", "--watch-bus"]
+                if self.password is not None:
+                    spawn.append("--env=MYSQL_PWD=" + self.password)
+                argv = spawn + list(argv)
             p = subprocess.run(argv, input=input, capture_output=True,
                                text=True, env=env, timeout=timeout)
             return p.returncode, p.stdout, p.stderr
