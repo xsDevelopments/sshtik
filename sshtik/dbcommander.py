@@ -301,7 +301,18 @@ class DBCommander(Gtk.Window):
         threading.Thread(target=work, daemon=True).start()
 
     def _startup(self):
-        for ep, pane in ((self.left_ep, self.left), (self.right_ep, self.right)):
+        panes = [(self.left_ep, self.left), (self.right_ep, self.right)]
+        # A pinned "home" host (other than the tab's own) auto-connects the
+        # left pane; the right pane always follows the tab's SSH session.
+        dflt = config.get("db_default_host", {})
+        if dflt.get("host") and dflt["host"] != self.conn.host:
+            login = config.get("db_logins", {}).get(f"ssh:{dflt['host']}") or {}
+            GLib.idle_add(self._apply_ssh, self.left, dflt["host"],
+                          dflt.get("user") or "", str(dflt.get("port") or ""),
+                          login.get("user") or "", login.get("password") or "",
+                          f"ssh:{dflt['host']}" in config.get("db_logins", {}))
+            panes = panes[1:]
+        for ep, pane in panes:
             ep.probe()
             if ep.available is True:
                 GLib.idle_add(pane.reload)
@@ -377,12 +388,17 @@ class DBCommander(Gtk.Window):
         for m in ("start", "end", "top", "bottom"):
             getattr(box, f"set_margin_{m}")(10)
 
+        # The left pane can pin a "home" host it auto-connects to on every open.
+        dflt_host = config.get("db_default_host", {}).get("host") if pane.side == "left" else None
+
         body = Gtk.Box(spacing=10)
         store = Gtk.ListStore(str, str, str, int)
+        def _label(name, host):
+            return name + ("  (default)" if host == dflt_host else "")
         for h in sorted(config["hosts"], key=lambda h: (h.get("name") or h["host"]).lower()):
-            store.append([h.get("name") or h["host"], h["host"], h.get("user", ""), int(h.get("port") or 22)])
+            store.append([_label(h.get("name") or h["host"], h["host"]), h["host"], h.get("user", ""), int(h.get("port") or 22)])
         for h in ssh_config_hosts():
-            store.append([h["name"] + "  (ssh config)", h["host"], h["user"], h["port"]])
+            store.append([_label(h["name"] + "  (ssh config)", h["host"]), h["host"], h["user"], h["port"]])
         hv = Gtk.TreeView(model=store)
         hv.append_column(Gtk.TreeViewColumn("SSH hosts", Gtk.CellRendererText(), text=0))
         hsw = Gtk.ScrolledWindow(); hsw.add(hv); hsw.set_size_request(220, 210)
@@ -390,13 +406,23 @@ class DBCommander(Gtk.Window):
 
         grid = Gtk.Grid(row_spacing=6, column_spacing=6)
         fields = {}
-        for i, (k, lab) in enumerate((("host", "SSH Host"), ("user", "SSH User"), ("port", "SSH Port"),
-                                      ("myuser", "MySQL user (opt)"), ("mypass", "MySQL password (opt)"))):
+        specs = (("host", "SSH Host"), ("user", "SSH User"), ("port", "SSH Port"),
+                 ("myuser", "MySQL user (opt)"), ("mypass", "MySQL password (opt)"))
+        for i, (k, lab) in enumerate(specs):
             grid.attach(Gtk.Label(label=lab, xalign=1), 0, i, 1, 1)
             e = Gtk.Entry()
             if k == "mypass":
                 e.set_visibility(False)
             fields[k] = e; grid.attach(e, 1, i, 1, 1)
+        # Start on the pane's current host so the default checkbox reads true.
+        fields["host"].set_text(ep.conn.host)
+        default_chk = None
+        if pane.side == "left":
+            default_chk = Gtk.CheckButton(label="Default left pane")
+            default_chk.set_tooltip_text(
+                "Auto-connect the left pane to this host every time the database window opens")
+            default_chk.set_active(bool(dflt_host) and dflt_host == ep.conn.host)
+            grid.attach(default_chk, 1, len(specs), 1, 1)
         body.pack_start(grid, True, True, 0)
         box.add(body)
 
@@ -405,7 +431,12 @@ class DBCommander(Gtk.Window):
             if it:
                 fields["host"].set_text(m[it][1]); fields["user"].set_text(m[it][2])
                 fields["port"].set_text("" if m[it][3] == 22 else str(m[it][3]))
+                if default_chk is not None:     # only stays ticked on the pinned host
+                    default_chk.set_active(m[it][1] == dflt_host)
         hv.get_selection().connect("changed", on_sel)
+        for i, r in enumerate(store):       # pre-select the current host's row if listed
+            if r[1] == ep.conn.host:
+                hv.get_selection().select_path(Gtk.TreePath(i)); break
 
         hint = Gtk.Label(xalign=0, wrap=True); hint.get_style_context().add_class("dim-label")
         hint.set_text("Opens a hidden SSH session and runs mysql on that host (socket auth) — "
@@ -424,13 +455,20 @@ class DBCommander(Gtk.Window):
         ok = d.run() == Gtk.ResponseType.OK
         v = {k: e.get_text().strip() for k, e in fields.items()}
         rem = remember.get_active()
+        make_default = bool(default_chk and default_chk.get_active())
         d.destroy()
         if not ok:
             return
-        if v["host"]:
-            self._apply_ssh(pane, v["host"], v["user"], v["port"], v["myuser"], v["mypass"], rem)
-        else:
-            self.status.set_text("Select or enter an SSH host")
+        if not v["host"]:
+            self.status.set_text("Select or enter an SSH host"); return
+        if default_chk is not None:         # left pane: update the pinned default
+            cur = config.get("db_default_host", {}).get("host")
+            if make_default:
+                config["db_default_host"] = {"host": v["host"], "user": v["user"], "port": v["port"]}
+                config.save()
+            elif cur == v["host"]:
+                config["db_default_host"] = {}; config.save()
+        self._apply_ssh(pane, v["host"], v["user"], v["port"], v["myuser"], v["mypass"], rem)
 
     def _apply_ssh(self, pane, host, user, port, myuser, mypass, remember, sshpass=None):
         GLib.idle_add(self.status.set_text, f"Connecting to {host}…")

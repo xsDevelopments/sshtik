@@ -14,6 +14,7 @@ _DEFAULTS = {
     "editor": "",           # command for editing remote files; empty = xdg-open
     "local_dir": {},        # {host: last local dir}
     "db_logins": {},        # {endpoint-key: {user,host,port,password}} — opt-in, plain text
+    "db_default_host": {},  # {"host","user","port"} — left DB pane auto-connects here on open
 }
 
 
