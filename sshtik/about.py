@@ -38,21 +38,27 @@ def _repo_root():
 
 
 def app_version():
+    # Running from a source tree (git checkout or an editable `pipx -e`
+    # install): pyproject.toml is the code that is actually loaded, so it is
+    # authoritative and wins over installed dist-info metadata — an editable
+    # install leaves a frozen version behind, which is how an up-to-date
+    # checkout can otherwise report a stale old number.
+    pp = os.path.join(_repo_root(), "pyproject.toml")
+    if os.path.exists(pp):
+        try:
+            with open(pp) as f:
+                for line in f:
+                    s = line.strip()
+                    if s.startswith("version") and "=" in s:
+                        return s.split("=", 1)[1].strip().strip('"').strip("'")
+        except Exception:
+            pass
+    # Installed build (site-packages / Flatpak): no pyproject alongside us.
     try:
         import importlib.metadata as im
         return im.version("sshtik")
     except Exception:
-        pass
-    # not installed (run straight from a checkout): read pyproject.toml
-    try:
-        pp = os.path.join(_repo_root(), "pyproject.toml")
-        with open(pp) as f:
-            for line in f:
-                if line.strip().startswith("version"):
-                    return line.split("=", 1)[1].strip().strip('"')
-    except Exception:
-        pass
-    return "0.0.0"
+        return "0.0.0"
 
 
 def build_info():

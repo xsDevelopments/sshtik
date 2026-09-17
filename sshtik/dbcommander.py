@@ -1,14 +1,13 @@
-"""Norton-Commander-style MySQL browser: local server on the left, the SSH
-host's server on the right, with copy/move of tables and databases between
-them. Not a HeidiSQL clone — a transfer tool that speaks MySQL.
+"""Norton-Commander-style MySQL browser: an SSH host's server on each side,
+with copy/move of tables and databases between them. Not a HeidiSQL clone —
+a transfer tool that speaks MySQL.
 
-Each pane is a MySQLEndpoint that runs mysql/mysqldump either locally (via
-subprocess — or the host's client via `flatpak-spawn --host` when sandboxed)
-or on the SSH host (via an exec channel). F5 copies the highlighted table or
-database to the other side (mysqldump | mysql); F6 moves it."""
-import os
+Each pane is a MySQLEndpoint that runs mysql/mysqldump on its SSH host over an
+exec channel (socket auth on that box, so no per-host TCP grants are needed).
+Either pane can be re-pointed at any host in your SSH config — including
+localhost, to reach this machine's own server. F5 copies the highlighted table
+or database to the other side (mysqldump | mysql); F6 moves it."""
 import shlex
-import subprocess
 import threading
 
 import paramiko
@@ -27,7 +26,7 @@ _SESSION_LOGINS = {}
 
 
 def _login_key(ep):
-    return "local" if ep.is_local() else f"ssh:{ep.conn.host}"
+    return f"ssh:{ep.conn.host}"
 
 
 def _apply_saved_login(ep):
@@ -56,8 +55,8 @@ def _store_login(ep, remember):
 
 # ---------------------------------------------------------------------------
 class MySQLEndpoint:
-    """mysql/mysqldump runner for one server. conn=None runs locally."""
-    def __init__(self, label, conn=None):
+    """mysql/mysqldump runner for one server, reached over an SSH connection."""
+    def __init__(self, label, conn):
         self.label = label
         self.conn = conn
         self.opts = {"user": None, "host": None, "port": None, "db": None, "defaults": []}
@@ -65,13 +64,9 @@ class MySQLEndpoint:
         self.available = None   # True, "auth" (needs password), or False
         self.last_error = None
 
-    def is_local(self):
-        return self.conn is None
-
     def target(self):
         o = self.opts
-        who = (o["user"] + "@" if o["user"] else "") + (o["host"] or ("localhost" if self.is_local() else self.conn.host))
-        return who
+        return (o["user"] + "@" if o["user"] else "") + (o["host"] or self.conn.host)
 
     # ---- command execution ---------------------------------------------
     def _conn_args(self):
@@ -83,20 +78,6 @@ class MySQLEndpoint:
         return a
 
     def _exec(self, argv, input=None, timeout=600):
-        if self.is_local():
-            env = dict(os.environ)
-            if self.password is not None:
-                env["MYSQL_PWD"] = self.password
-            if os.path.exists("/.flatpak-info"):
-                # Sandboxed: no mysql client inside the Flatpak, so run the
-                # host's mysql/mysqldump (which also reads the host's ~/.my.cnf).
-                spawn = ["flatpak-spawn", "--host", "--watch-bus"]
-                if self.password is not None:
-                    spawn.append("--env=MYSQL_PWD=" + self.password)
-                argv = spawn + list(argv)
-            p = subprocess.run(argv, input=input, capture_output=True,
-                               text=True, env=env, timeout=timeout)
-            return p.returncode, p.stdout, p.stderr
         cmd = " ".join(shlex.quote(a) for a in argv)
         if self.password is not None:
             cmd = "MYSQL_PWD=" + shlex.quote(self.password) + " " + cmd
@@ -264,7 +245,7 @@ class _DBPane(Gtk.Box):
 # ---------------------------------------------------------------------------
 class DBCommander(Gtk.Window):
     def __init__(self, conn, parent=None):
-        super().__init__(title=f"Databases — local ⇆ {conn.host}")
+        super().__init__(title=f"Databases — {conn.host}")
         self.conn = conn
         w, h = config["window"].get("dbc", (1100, 640))
         self.set_default_size(w, h)
@@ -274,8 +255,10 @@ class DBCommander(Gtk.Window):
         close_on_escape(self)
         self.connect("key-press-event", self._on_key)
 
-        # left = local server; right = the SSH host's server (creds detected)
-        self.left_ep = MySQLEndpoint("local", conn=None)
+        # Both panes start on the tab's SSH host; either can be re-pointed at
+        # any other host (or localhost). If a mysql client is already running
+        # in the terminal, mirror its -u/-h/-P onto the right pane.
+        self.left_ep = MySQLEndpoint(conn.host, conn=conn)
         self.right_ep = MySQLEndpoint(conn.host, conn=conn)
         fg = conn.foreground_process()
         if fg and fg[1] in ("mysql", "mariadb"):
@@ -384,19 +367,15 @@ class DBCommander(Gtk.Window):
 
     # ---- connect / credentials -----------------------------------------
     def connect_endpoint(self, pane):
-        """Point a pane at Local MySQL or at any SSH host (mysql runs there)."""
+        """Point a pane at any SSH host (mysql runs there over the session)."""
         ep = pane.endpoint
         from .app import ssh_config_hosts
         d = Gtk.Dialog(title=f"Connect — {pane.side} pane", transient_for=self, flags=0)
         d.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Connect", Gtk.ResponseType.OK)
-        d.set_default_size(600, 430)
+        d.set_default_size(600, 400)
         box = d.get_content_area(); box.set_spacing(6)
         for m in ("start", "end", "top", "bottom"):
             getattr(box, f"set_margin_{m}")(10)
-
-        local_chk = Gtk.CheckButton(label="Local MySQL (this machine)")
-        local_chk.set_active(ep.is_local())
-        box.add(local_chk)
 
         body = Gtk.Box(spacing=10)
         store = Gtk.ListStore(str, str, str, int)
@@ -429,8 +408,9 @@ class DBCommander(Gtk.Window):
         hv.get_selection().connect("changed", on_sel)
 
         hint = Gtk.Label(xalign=0, wrap=True); hint.get_style_context().add_class("dim-label")
-        hint.set_text("SSH: opens a hidden session and runs mysql on that host (socket auth) — "
-                      "leave MySQL user blank to use the box's default (root when you SSH as root).")
+        hint.set_text("Opens a hidden SSH session and runs mysql on that host (socket auth) — "
+                      "leave MySQL user blank to use the box's default (root when you SSH as root). "
+                      "Point a pane at localhost to reach this machine's own server.")
         box.add(hint)
         remember = Gtk.CheckButton(label="Remember this login")
         remember.set_active(_login_key(ep) in config.get("db_logins", {}))
@@ -440,46 +420,17 @@ class DBCommander(Gtk.Window):
             err.set_markup(f"<span foreground='#d9534f' size='small'>{GLib.markup_escape_text(ep.last_error)}</span>")
             box.add(err)
 
-        def sync(*_):
-            loc = local_chk.get_active()
-            hsw.set_sensitive(not loc)
-            for k in ("host", "user", "port"):
-                fields[k].set_sensitive(not loc)
-        local_chk.connect("toggled", sync); sync()
-
         d.set_default_response(Gtk.ResponseType.OK); d.show_all()
         ok = d.run() == Gtk.ResponseType.OK
         v = {k: e.get_text().strip() for k, e in fields.items()}
-        loc, rem = local_chk.get_active(), remember.get_active()
+        rem = remember.get_active()
         d.destroy()
         if not ok:
             return
-        if loc:
-            self._apply_local(pane, v["myuser"], v["mypass"], rem)
-        elif v["host"]:
+        if v["host"]:
             self._apply_ssh(pane, v["host"], v["user"], v["port"], v["myuser"], v["mypass"], rem)
         else:
-            self.status.set_text("Enter an SSH host, or tick Local MySQL")
-
-    def _finish_endpoint(self, pane, remember):
-        ep = pane.endpoint
-        _store_login(ep, remember)
-        pane.level_db = None
-        def work():
-            ep.probe()
-            if ep.available is True:
-                GLib.idle_add(pane.reload)
-            else:
-                GLib.idle_add(self.status.set_text, f"{ep.label}: {ep.last_error or 'cannot connect'}")
-                GLib.idle_add(pane._set_header)
-        self._bg(work)
-
-    def _apply_local(self, pane, myuser, mypass, remember):
-        ep = pane.endpoint
-        ep.conn = None; ep.label = "local"
-        ep.opts = {"user": myuser or None, "host": None, "port": None, "db": None, "defaults": []}
-        ep.password = mypass or None
-        self._finish_endpoint(pane, remember)
+            self.status.set_text("Select or enter an SSH host")
 
     def _apply_ssh(self, pane, host, user, port, myuser, mypass, remember, sshpass=None):
         GLib.idle_add(self.status.set_text, f"Connecting to {host}…")

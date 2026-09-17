@@ -61,6 +61,15 @@
     <color type="primary" scheme_preference="dark">#1c4e6b</color>
   </branding>
   <releases>
+    <release version="0.2.1" date="2026-09-18">
+      <description>
+        <ul>
+          <li>MySQL commander is SSH on both sides: each pane connects to a host from your SSH config and runs mysql there over the session (socket auth, no per-host TCP grants). Point a pane at localhost to reach the machine's own server</li>
+          <li>Removed the separate local-client pane; this also drops the Flatpak host-spawn permission from the sandbox model going forward</li>
+          <li>Version readout now follows the running source tree, so an up-to-date checkout no longer shows a stale number left by an editable install</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.2.0" date="2026-09-17">
       <description>
         <p>Dual-pane MySQL commander, and a Midnight-Commander-style file panel.</p>
