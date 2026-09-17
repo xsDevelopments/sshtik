@@ -28,6 +28,7 @@ class MySQLEndpoint:
         self.opts = {"user": None, "host": None, "port": None, "db": None, "defaults": []}
         self.password = None
         self.available = None   # True, "auth" (needs password), or False
+        self.last_error = None
 
     def is_local(self):
         return self.conn is None
@@ -94,11 +95,11 @@ class MySQLEndpoint:
     def probe(self):
         try:
             self.query("SELECT 1")
-            self.available = True
-        except AuthError:
-            self.available = "auth"
-        except Exception:
-            self.available = False
+            self.available = True; self.last_error = None
+        except AuthError as e:
+            self.available = "auth"; self.last_error = str(e)
+        except Exception as e:
+            self.available = False; self.last_error = str(e)
         return self.available
 
     def databases(self):
@@ -335,6 +336,16 @@ class DBCommander(Gtk.Window):
             e = Gtk.Entry(text=defaults[k]); entries[k] = e; grid.attach(e, 1, i, 1, 1)
         grid.attach(Gtk.Label(label="Password", xalign=1), 0, 3, 1, 1)
         pw = Gtk.Entry(visibility=False, activates_default=True); grid.attach(pw, 1, 3, 1, 1)
+        if ep.last_error:
+            err = Gtk.Label(xalign=0, wrap=True); err.set_max_width_chars(48)
+            err.set_markup(f"<span foreground='#d9534f'>{GLib.markup_escape_text(ep.last_error)}</span>")
+            grid.attach(err, 0, 4, 2, 1)
+        if ep.is_local():
+            hint = Gtk.Label(xalign=0, wrap=True)
+            hint.get_style_context().add_class("dim-label")
+            hint.set_text("Tip: MariaDB 'root' often uses socket auth (no password). "
+                          "Use a password user, or create one with: sudo mysql.")
+            grid.attach(hint, 0, 5, 2, 1)
         d.get_content_area().add(grid); d.set_default_response(Gtk.ResponseType.OK); d.show_all()
         if d.run() == Gtk.ResponseType.OK:
             ep.opts["user"] = entries["user"].get_text().strip() or None
@@ -348,7 +359,7 @@ class DBCommander(Gtk.Window):
                 if ep.available is True:
                     GLib.idle_add(pane.reload)
                 else:
-                    GLib.idle_add(self.status.set_text, f"{ep.label}: cannot connect ({ep.available})")
+                    GLib.idle_add(self.status.set_text, f"{ep.label}: {ep.last_error or 'cannot connect'}")
                     GLib.idle_add(pane._set_header)
             self._bg(work)
         else:
