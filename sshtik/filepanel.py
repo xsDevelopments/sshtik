@@ -331,8 +331,10 @@ class FilePanel(Gtk.Window):
 
         mid = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         mid.set_valign(Gtk.Align.CENTER)
-        up = Gtk.Button(label="Upload →"); up.connect("clicked", lambda b: self.transfer(self.local))
-        dn = Gtk.Button(label="← Download"); dn.connect("clicked", lambda b: self.transfer(self.remote))
+        up = Gtk.Button(label="→"); up.set_tooltip_text("Upload to remote")
+        up.connect("clicked", lambda b: self.transfer(self.local))
+        dn = Gtk.Button(label="←"); dn.set_tooltip_text("Download to local")
+        dn.connect("clicked", lambda b: self.transfer(self.remote))
         mid.pack_start(up, False, False, 0); mid.pack_start(dn, False, False, 0)
 
         self.paned = Gtk.Paned()
