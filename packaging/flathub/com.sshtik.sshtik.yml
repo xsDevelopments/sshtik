@@ -80,4 +80,4 @@ modules:
       - type: git
         url: https://github.com/xsDevelopments/sshtik.git
         tag: v0.2.1
-        commit: 15be3675f583b72bfc57adb23a8d9a6fa35debb5
+        commit: 130d1b224ff95ad6229005ecca40da6b754dd95c
