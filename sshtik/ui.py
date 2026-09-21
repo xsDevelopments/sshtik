@@ -14,10 +14,11 @@ _CSS = b"""
    points at exactly one side -- the one the next keystroke goes to. */
 .sshtik-pane {
     border: 2px solid transparent;
-    border-radius: 3px;
+    border-radius: 4px;
 }
 .sshtik-pane.active-pane {
     border-color: @theme_selected_bg_color;
+    background-color: alpha(@theme_selected_bg_color, 0.13);
 }
 .sshtik-pane treeview:selected {
     background-color: mix(@theme_bg_color, @theme_fg_color, 0.22);
