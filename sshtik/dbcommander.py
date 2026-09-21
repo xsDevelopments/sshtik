@@ -164,6 +164,7 @@ class _DBPane(Gtk.Box):
 
     def __init__(self, commander, endpoint, side):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        self.get_style_context().add_class("sshtik-pane")
         self.commander, self.endpoint, self.side = commander, endpoint, side
         self.level_db = None   # None = databases; else tables in this db
 
@@ -270,8 +271,10 @@ class DBCommander(Gtk.Window):
         self.right = _DBPane(self, self.right_ep, "right")
         self._active = self.left
         for pane in (self.left, self.right):
-            pane.view.connect("focus-in-event",
-                              lambda w, e, p=pane: (setattr(self, "_active", p), False)[1])
+            for w in (pane.view, pane.header):
+                w.connect("focus-in-event",
+                          lambda w, e, p=pane: (self._set_active(p), False)[1])
+        self._set_active(self.left)
 
         paned = Gtk.Paned()
         paned.pack1(self.left, True, False)
@@ -338,9 +341,17 @@ class DBCommander(Gtk.Window):
             bar.pack_start(b, True, True, 0)
         return bar
 
+    def _set_active(self, pane):
+        """Mark one pane active (accent frame + accent selection); the other
+        drops to a muted selection. Matches the file panel's focus cue."""
+        self._active = pane
+        for p in (self.left, self.right):
+            sc = p.get_style_context()
+            (sc.add_class if p is pane else sc.remove_class)("active-pane")
+
     def _switch_sides(self):
         target = self.right if self._active is self.left else self.left
-        target.view.grab_focus(); self._active = target
+        target.view.grab_focus(); self._set_active(target)
 
     def _on_key(self, w, ev):
         k = ev.keyval
