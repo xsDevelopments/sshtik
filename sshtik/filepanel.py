@@ -246,9 +246,21 @@ class _Pane(Gtk.Box):
     }
 
     def _sorted_entries(self):
+        """Directories are always grouped first, then files; each group is
+        sorted by the active column and direction. Directory sizes aren't
+        shown (a directory's ~4 KB st_size is meaningless here), so a Size sort
+        orders the directory group A-Z instead of by that hidden value."""
         if self.sort_key is None:           # default: directories first, then A-Z
             return sorted(self.entries, key=lambda e: (not e[2], e[0].lower()))
-        return sorted(self.entries, key=self._SORT_KEYS[self.sort_key], reverse=self.sort_desc)
+        keyfn = self._SORT_KEYS[self.sort_key]
+        dirs = [e for e in self.entries if e[2]]
+        files = [e for e in self.entries if not e[2]]
+        if self.sort_key == "size":
+            dirs.sort(key=lambda e: e[0].lower())
+        else:
+            dirs.sort(key=lambda e: (keyfn(e), e[0].lower()), reverse=self.sort_desc)
+        files.sort(key=lambda e: (keyfn(e), e[0].lower()), reverse=self.sort_desc)
+        return dirs + files
 
     def _render(self):
         """(Re)build the row list from self.entries under the current sort."""
