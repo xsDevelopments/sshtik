@@ -61,6 +61,13 @@
     <color type="primary" scheme_preference="dark">#1c4e6b</color>
   </branding>
   <releases>
+    <release version="0.2.3" date="2026-09-21">
+      <description>
+        <ul>
+          <li>Fix the file (F5) and database (F6) helpers failing to open — a regression in 0.2.2 that also leaked the keypress to the terminal</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.2.2" date="2026-09-21">
       <description>
         <ul>
