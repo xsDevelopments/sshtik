@@ -61,6 +61,14 @@
     <color type="primary" scheme_preference="dark">#1c4e6b</color>
   </branding>
   <releases>
+    <release version="0.2.2" date="2026-09-21">
+      <description>
+        <ul>
+          <li>File panel: a mimetype icon on every row (folder, image, script, database, note) and directory names shown in bold</li>
+          <li>File and MySQL panels: the active pane is clearly marked with an accent frame and accent-coloured selection, while the inactive pane's selection is muted — so it is obvious which side the next keystroke acts on</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.2.1" date="2026-09-18">
       <description>
         <ul>
