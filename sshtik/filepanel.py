@@ -98,9 +98,63 @@ def _sq(s):
     return "'" + s.replace("'", "'\\''") + "'"
 
 
+# Row icons: a themed mimetype icon per file category, matched on extension.
+# Icon themes disagree on which names they ship (Adwaita in the Flatpak has
+# x-office-database, many desktop themes only have application-sql, etc.), so
+# each category is a preference chain and _resolve_icon picks the first the
+# current theme actually has — falling back to a name every theme carries.
+_ICON_IMAGE = {"jpg", "jpeg", "png", "gif", "svg", "tif", "tiff", "bmp",
+               "psd", "webp", "ico", "heic", "avif"}
+_ICON_SCRIPT = {"php", "py", "js", "ts", "jsx", "tsx", "sh", "bash", "zsh",
+                "rb", "pl", "pm", "lua", "c", "cpp", "cc", "h", "hpp", "go",
+                "rs", "java", "kt", "swift", "vue", "css", "scss", "html",
+                "htm", "xml", "yml", "yaml", "json", "toml", "ini", "conf"}
+_ICON_NOTE = {"txt", "me", "md", "markdown", "rst", "log", "text", "nfo", "rtf"}
+_ICON_DB = {"sql", "sqlite", "sqlite3", "db", "dump"}
+
+_ICON_CHAINS = {
+    "image":   ("image-x-generic",),
+    "db":      ("x-office-database", "application-sql", "application-x-sqlite3", "text-x-generic"),
+    "script":  ("text-x-script", "application-x-executable", "text-x-generic"),
+    "note":    ("x-office-document", "text-x-generic"),
+    "generic": ("text-x-generic",),
+}
+_icon_cache = {}
+
+
+def _resolve_icon(cat):
+    """First icon name in the category's chain that the theme has (cached)."""
+    name = _icon_cache.get(cat)
+    if name is None:
+        chain = _ICON_CHAINS[cat]
+        try:
+            it = Gtk.IconTheme.get_default()
+            name = next((n for n in chain if it.has_icon(n)), chain[-1])
+        except Exception:
+            name = chain[0]
+        _icon_cache[cat] = name
+    return name
+
+
+def _file_icon(name):
+    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    if ext in _ICON_IMAGE:
+        return _resolve_icon("image")
+    if ext in _ICON_DB:
+        return _resolve_icon("db")
+    if ext in _ICON_SCRIPT:
+        return _resolve_icon("script")
+    if ext in _ICON_NOTE:
+        return _resolve_icon("note")
+    return _resolve_icon("generic")
+
+
+_W_BOLD, _W_NORMAL = int(Pango.Weight.BOLD), int(Pango.Weight.NORMAL)
+
+
 # ---------------------------------------------------------------------------
 class _Pane(Gtk.Box):
-    COL_NAME, COL_SIZE, COL_MTIME, COL_PERM, COL_KIND, COL_BYTES = range(6)
+    COL_NAME, COL_SIZE, COL_MTIME, COL_PERM, COL_KIND, COL_BYTES, COL_ICON, COL_WEIGHT = range(8)
 
     def __init__(self, panel, fs, side):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -119,16 +173,27 @@ class _Pane(Gtk.Box):
         hdr.pack_start(rf, False, False, 0)
         self.pack_start(hdr, False, False, 0)
 
-        self.store = Gtk.ListStore(str, str, str, str, str, int)
+        self.store = Gtk.ListStore(str, str, str, str, str, int, str, int)
         self.view = Gtk.TreeView(model=self.store)
-        for i, (t, w) in enumerate((("Name", 260), ("Size", 70), ("Modified", 130), ("Perms", 80))):
+        # Name column: a mimetype icon, then the name (bold for directories).
+        name_col = Gtk.TreeViewColumn("Name")
+        icon_rend = Gtk.CellRendererPixbuf(); icon_rend.set_property("xpad", 4)
+        name_col.pack_start(icon_rend, False)
+        name_col.add_attribute(icon_rend, "icon-name", self.COL_ICON)
+        name_rend = Gtk.CellRendererText()
+        name_rend.set_property("ellipsize", Pango.EllipsizeMode.MIDDLE)
+        name_rend.set_property("xpad", 4)
+        name_col.pack_start(name_rend, True)
+        name_col.add_attribute(name_rend, "text", self.COL_NAME)
+        name_col.add_attribute(name_rend, "weight", self.COL_WEIGHT)
+        name_col.set_resizable(True); name_col.set_min_width(260)
+        name_col.set_sort_column_id(self.COL_NAME)
+        self.view.append_column(name_col)
+        for t, i in (("Size", self.COL_SIZE), ("Modified", self.COL_MTIME), ("Perms", self.COL_PERM)):
             rend = Gtk.CellRendererText()
-            if i == 0:
-                rend.set_property("ellipsize", Pango.EllipsizeMode.MIDDLE)
-                rend.set_property("xpad", 8)
             col = Gtk.TreeViewColumn(t, rend, text=i)
-            col.set_resizable(True); col.set_min_width(w if i == 0 else 0)
-            col.set_sort_column_id(self.COL_BYTES if i == 1 else i)
+            col.set_resizable(True)
+            col.set_sort_column_id(self.COL_BYTES if i == self.COL_SIZE else i)
             self.view.append_column(col)
         self.view.set_grid_lines(Gtk.TreeViewGridLines.VERTICAL)
         stripe(self.view)
@@ -159,12 +224,14 @@ class _Pane(Gtk.Box):
         self.cwd = path
         self.path_entry.set_text(path)
         self.store.clear()
-        self.store.append(["..", "", "", "", "dir", -1])
+        self.store.append(["..", "", "", "", "dir", -1, "folder", _W_BOLD])
         for name, size, is_dir, mtime, mode in entries:
             self.store.append([name, "" if is_dir else _human(size),
                                time.strftime("%Y-%m-%d %H:%M", time.localtime(mtime)) if mtime else "",
                                oct(stat.S_IMODE(mode))[2:] if mode else "",
-                               "dir" if is_dir else "file", -1 if is_dir else size])
+                               "dir" if is_dir else "file", -1 if is_dir else size,
+                               "folder" if is_dir else _file_icon(name),
+                               _W_BOLD if is_dir else _W_NORMAL])
         self.panel.status.set_text(f"{self.fs.name}: {len(entries)} items in {path}")
 
     def refresh(self):
