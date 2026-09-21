@@ -271,9 +271,9 @@ class DBCommander(Gtk.Window):
         self.right = _DBPane(self, self.right_ep, "right")
         self._active = self.left
         for pane in (self.left, self.right):
-            for w in (pane.view, pane.header):
-                w.connect("focus-in-event",
-                          lambda w, e, p=pane: (self._set_active(p), False)[1])
+            for fw in (pane.view, pane.header):
+                fw.connect("focus-in-event",
+                           lambda w, e, p=pane: (self._set_active(p), False)[1])
         self._set_active(self.left)
 
         paned = Gtk.Paned()

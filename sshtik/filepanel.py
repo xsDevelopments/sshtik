@@ -395,9 +395,9 @@ class FilePanel(Gtk.Window):
         self._active = self.local
         for pane in (self.local, self.remote):
             # any focus inside a pane (its list or its path entry) makes it active
-            for w in (pane.view, pane.path_entry):
-                w.connect("focus-in-event",
-                          lambda w, e, p=pane: (self._set_active(p), False)[1])
+            for fw in (pane.view, pane.path_entry):
+                fw.connect("focus-in-event",
+                           lambda w, e, p=pane: (self._set_active(p), False)[1])
         self._set_active(self.local)
 
         mid = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
