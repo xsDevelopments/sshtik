@@ -158,6 +158,7 @@ class _Pane(Gtk.Box):
 
     def __init__(self, panel, fs, side):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        self.get_style_context().add_class("sshtik-pane")
         self.panel, self.fs, self.side = panel, fs, side
         self.cwd = None
         hdr = Gtk.Box(spacing=4)
@@ -393,8 +394,11 @@ class FilePanel(Gtk.Window):
         self.remote.fs.name = f"Remote ({conn.host})"
         self._active = self.local
         for pane in (self.local, self.remote):
-            pane.view.connect("focus-in-event",
-                              lambda w, e, p=pane: (setattr(self, "_active", p), False)[1])
+            # any focus inside a pane (its list or its path entry) makes it active
+            for w in (pane.view, pane.path_entry):
+                w.connect("focus-in-event",
+                          lambda w, e, p=pane: (self._set_active(p), False)[1])
+        self._set_active(self.local)
 
         mid = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         mid.set_valign(Gtk.Align.CENTER)
@@ -425,10 +429,18 @@ class FilePanel(Gtk.Window):
         self.bg(lambda: GLib.idle_add(self.remote.load, conn.shell_cwd() or "."))
 
     # ---- helpers --------------------------------------------------------
+    def _set_active(self, pane):
+        """Mark one pane active: it gets the accent frame + accent selection,
+        the other drops to a muted selection. Blue = where the focus is."""
+        self._active = pane
+        for p in (self.local, self.remote):
+            sc = p.get_style_context()
+            (sc.add_class if p is pane else sc.remove_class)("active-pane")
+
     def _switch_sides(self):
         target = self.remote if self._active is self.local else self.local
         target.view.grab_focus()
-        self._active = target
+        self._set_active(target)
 
     def _focus_path(self):
         self._active.path_entry.grab_focus()

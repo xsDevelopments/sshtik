@@ -7,6 +7,26 @@ _CSS = b"""
 /* 8px breathing room around the terminal: margin on the VTE widget, with the
    scrolled window behind it painted the terminal's background colour. */
 .terminal-frame { background-color: #000000; }
+
+/* Dual-pane focus: only the active pane reads as "live". Its selection keeps
+   the accent colour and it gains an accent frame; the inactive pane's
+   selection drops to the theme's muted (unfocused) selection colour, so blue
+   points at exactly one side -- the one the next keystroke goes to. */
+.sshtik-pane {
+    border: 2px solid transparent;
+    border-radius: 3px;
+}
+.sshtik-pane.active-pane {
+    border-color: @theme_selected_bg_color;
+}
+.sshtik-pane treeview:selected {
+    background-color: mix(@theme_bg_color, @theme_fg_color, 0.22);
+    color: @theme_fg_color;
+}
+.sshtik-pane.active-pane treeview:selected {
+    background-color: @theme_selected_bg_color;
+    color: @theme_selected_fg_color;
+}
 """
 TERMINAL_MARGIN = 8
 
