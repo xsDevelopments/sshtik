@@ -8,23 +8,17 @@ _CSS = b"""
    scrolled window behind it painted the terminal's background colour. */
 .terminal-frame { background-color: #000000; }
 
-/* Dual-pane focus: only the active pane reads as "live". Its selection keeps
-   the accent colour and it gains an accent frame; the inactive pane's
-   selection drops to the theme's muted (unfocused) selection colour, so blue
-   points at exactly one side -- the one the next keystroke goes to. */
-.sshtik-pane {
-    border: 2px solid transparent;
-    border-radius: 4px;
-}
-.sshtik-pane.active-pane {
-    border-color: @theme_selected_bg_color;
-    background-color: alpha(@theme_selected_bg_color, 0.13);
-}
+/* Dual-pane focus: exactly one blue highlight, always where the keyboard focus
+   is. The pane whose list has focus shows its selected row in the accent
+   colour; every other selection is a muted grey. A location bar is blue only
+   while it is focused (its text selection is cleared on focus-out), so a pane
+   you tab away from never keeps a stray blue bar. No frame -- the single blue
+   highlight is the whole focus cue. */
 .sshtik-pane treeview:selected {
     background-color: mix(@theme_bg_color, @theme_fg_color, 0.22);
     color: @theme_fg_color;
 }
-.sshtik-pane.active-pane treeview:selected {
+.sshtik-pane.list-focused treeview:selected {
     background-color: @theme_selected_bg_color;
     color: @theme_selected_fg_color;
 }

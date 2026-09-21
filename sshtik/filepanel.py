@@ -394,11 +394,15 @@ class FilePanel(Gtk.Window):
         self.remote.fs.name = f"Remote ({conn.host})"
         self._active = self.local
         for pane in (self.local, self.remote):
-            # any focus inside a pane (its list or its path entry) makes it active
-            for fw in (pane.view, pane.path_entry):
-                fw.connect("focus-in-event",
-                           lambda w, e, p=pane: (self._set_active(p), False)[1])
-        self._set_active(self.local)
+            pane.view.connect(
+                "focus-in-event", lambda w, e, p=pane: (self._focus_pane(p, True), False)[1])
+            pane.path_entry.connect(
+                "focus-in-event", lambda w, e, p=pane: (self._focus_pane(p, False), False)[1])
+            # leaving the location bar drops its text selection, so no stray
+            # blue bar lingers on a pane you tab away from
+            pane.path_entry.connect(
+                "focus-out-event", lambda w, e: (w.select_region(0, 0), False)[1])
+        self._focus_pane(self.local, True)
 
         mid = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         mid.set_valign(Gtk.Align.CENTER)
@@ -427,20 +431,27 @@ class FilePanel(Gtk.Window):
 
         self.local.load(config["local_dir"].get(conn.host) or os.getcwd())
         self.bg(lambda: GLib.idle_add(self.remote.load, conn.shell_cwd() or "."))
+        # start with the local list focused (blue on a row, not the path bar)
+        GLib.idle_add(self.local.view.grab_focus)
 
     # ---- helpers --------------------------------------------------------
-    def _set_active(self, pane):
-        """Mark one pane active: it gets the accent frame + accent selection,
-        the other drops to a muted selection. Blue = where the focus is."""
+    def _focus_pane(self, pane, is_list):
+        """Track focus so exactly one blue highlight shows. `is_list` True when
+        a pane's file list has focus (its selection turns accent); False when a
+        location bar has focus (no list is accent — the location bar is the
+        blue). Either way `pane` becomes the origin for the next Tab."""
         self._active = pane
         for p in (self.local, self.remote):
             sc = p.get_style_context()
-            (sc.add_class if p is pane else sc.remove_class)("active-pane")
+            if is_list and p is pane:
+                sc.add_class("list-focused")
+            else:
+                sc.remove_class("list-focused")
 
     def _switch_sides(self):
         target = self.remote if self._active is self.local else self.local
         target.view.grab_focus()
-        self._set_active(target)
+        self._focus_pane(target, True)
 
     def _focus_path(self):
         self._active.path_entry.grab_focus()

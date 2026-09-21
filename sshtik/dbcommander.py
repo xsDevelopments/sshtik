@@ -271,10 +271,11 @@ class DBCommander(Gtk.Window):
         self.right = _DBPane(self, self.right_ep, "right")
         self._active = self.left
         for pane in (self.left, self.right):
-            for fw in (pane.view, pane.header):
-                fw.connect("focus-in-event",
-                           lambda w, e, p=pane: (self._set_active(p), False)[1])
-        self._set_active(self.left)
+            pane.view.connect(
+                "focus-in-event", lambda w, e, p=pane: (self._focus_pane(p, True), False)[1])
+            pane.header.connect(
+                "focus-in-event", lambda w, e, p=pane: (self._focus_pane(p, False), False)[1])
+        self._focus_pane(self.left, True)
 
         paned = Gtk.Paned()
         paned.pack1(self.left, True, False)
@@ -341,17 +342,20 @@ class DBCommander(Gtk.Window):
             bar.pack_start(b, True, True, 0)
         return bar
 
-    def _set_active(self, pane):
-        """Mark one pane active (accent frame + accent selection); the other
-        drops to a muted selection. Matches the file panel's focus cue."""
+    def _focus_pane(self, pane, is_list):
+        """One blue highlight = where focus is: the pane whose list has focus
+        shows its selection accent; every other selection is muted grey."""
         self._active = pane
         for p in (self.left, self.right):
             sc = p.get_style_context()
-            (sc.add_class if p is pane else sc.remove_class)("active-pane")
+            if is_list and p is pane:
+                sc.add_class("list-focused")
+            else:
+                sc.remove_class("list-focused")
 
     def _switch_sides(self):
         target = self.right if self._active is self.left else self.left
-        target.view.grab_focus(); self._set_active(target)
+        target.view.grab_focus(); self._focus_pane(target, True)
 
     def _on_key(self, w, ev):
         k = ev.keyval
