@@ -167,6 +167,9 @@ class _DBPane(Gtk.Box):
         self.get_style_context().add_class("sshtik-pane")
         self.commander, self.endpoint, self.side = commander, endpoint, side
         self.level_db = None   # None = databases; else tables in this db
+        self.items = []
+        self.sort_key = None    # None | "name" | "rows" | "size"
+        self.sort_desc = False
 
         self.header = Gtk.Button(relief=Gtk.ReliefStyle.NONE)
         self.header.set_tooltip_text("Click to change this connection")
@@ -182,6 +185,12 @@ class _DBPane(Gtk.Box):
         c1 = Gtk.TreeViewColumn("Rows", rr, text=1); c1.set_alignment(1.0); self.view.append_column(c1)
         c2 = Gtk.TreeViewColumn("Size", Gtk.CellRendererProgress(), value=3, text=2)
         c2.set_min_width(150); self.view.append_column(c2)
+        # Manual 3-state sort (off -> ascending -> descending -> off) with the
+        # arrow inverted (down = largest/most rows first), matching the file panel.
+        self.columns = {"name": c0, "rows": c1, "size": c2}
+        for key, col in self.columns.items():
+            col.set_clickable(True)
+            col.connect("clicked", lambda c, k=key: self._sort_clicked(k))
         stripe(self.view)
         self.view.get_selection().set_mode(Gtk.SelectionMode.MULTIPLE)
         self.view.connect("row-activated", self._activated)
@@ -195,7 +204,7 @@ class _DBPane(Gtk.Box):
         state = "" if ep.available is True else ("  (click to connect)" if ep.available in (False, "auth", None) else "")
         self.header.set_label(f"{ep.label}: {ep.target()}{crumb}{state}")
 
-    def reload(self):
+    def reload(self, select="..", focus=False):
         self._set_header()
         ep = self.endpoint
         self.store.clear()
@@ -206,23 +215,73 @@ class _DBPane(Gtk.Box):
                 items = [(n, None, int(b or 0), "db") for n, b in ep.databases()]
             else:
                 items = [(n, int(r or 0), int(b or 0), "table") for n, r, b in ep.tables(self.level_db)]
-            GLib.idle_add(self._fill, items)
+            GLib.idle_add(self._fill, items, select, focus)
         self.commander._bg(work)
 
-    def _fill(self, items):
+    _SORT_KEYS = {
+        "name": lambda it: it[0].lower(),
+        "rows": lambda it: it[1] or 0,
+        "size": lambda it: it[2],
+    }
+
+    def _sorted_items(self):
+        if self.sort_key is None:           # default: the SQL order (name A-Z)
+            return self.items
+        return sorted(self.items, key=self._SORT_KEYS[self.sort_key], reverse=self.sort_desc)
+
+    def _render(self):
         self.store.clear()
         if self.level_db is not None:
             self.store.append(["..", "", "", 0, 0, "up"])
+        items = self._sorted_items()
         maxb = max([b for _, _, b, _ in items], default=0)
         for name, rows, nbytes, kind in items:
             pct = int(round(nbytes * 100.0 / maxb)) if maxb else 0
             self.store.append([name, f"{rows:,}" if rows is not None else "",
                                _human_bytes(nbytes), pct, nbytes, kind])
+
+    def _fill(self, items, select="..", focus=False):
+        self.items = items
+        self._render()
         total = sum(b for _, _, b, _ in items)
         where = self.level_db or "databases"
         self.commander.status.set_text(
             f"{self.endpoint.label}: {len(items)} {'tables' if self.level_db else 'databases'} "
             f"in {where} · {_human_bytes(total)}")
+        self._select_name(select, focus)
+
+    def _select_name(self, name, focus=True):
+        """Cursor/selection onto the row `name` (falling back to the top). With
+        focus, grab the list so it reads blue; else just select it."""
+        if len(self.store) == 0:
+            return
+        idx = next((i for i, r in enumerate(self.store) if r[self.NAME] == name), 0)
+        p = Gtk.TreePath(idx)
+        if focus:
+            self.view.set_cursor(p)
+        else:
+            sel = self.view.get_selection()
+            sel.unselect_all(); sel.select_path(p)
+        self.view.scroll_to_cell(p, None, False, 0, 0)
+
+    def _sort_clicked(self, key):
+        """Cycle one column: off -> ascending -> descending -> off."""
+        if self.sort_key != key:
+            self.sort_key, self.sort_desc = key, False
+        elif not self.sort_desc:
+            self.sort_desc = True
+        else:
+            self.sort_key = None
+        self._update_sort_indicators()
+        self._render()
+
+    def _update_sort_indicators(self):
+        for k, col in self.columns.items():
+            active = k == self.sort_key
+            col.set_sort_indicator(active)
+            if active:                       # invert: down = largest/most first
+                col.set_sort_order(Gtk.SortType.ASCENDING if self.sort_desc
+                                   else Gtk.SortType.DESCENDING)
 
     def selected(self):
         model, rows = self.view.get_selection().get_selected_rows()
@@ -232,15 +291,17 @@ class _DBPane(Gtk.Box):
     def _activated(self, view, path, col):
         name, kind = self.store[path][self.NAME], self.store[path][self.KIND]
         if kind == "up":
-            self.level_db = None; self.reload()
-        elif kind == "db":
-            self.level_db = name; self.reload()
+            self.go_up()
+        elif kind == "db":                   # into a database: land on ".."
+            self.level_db = name; self.reload(select="..", focus=True)
         elif kind == "table":
             self.commander.view_table(self.endpoint, self.level_db, name)
 
     def go_up(self):
-        if self.level_db is not None:
-            self.level_db = None; self.reload()
+        if self.level_db is not None:        # back to the database list, on the db just left
+            left = self.level_db
+            self.level_db = None
+            self.reload(select=left, focus=True)
 
 
 # ---------------------------------------------------------------------------
@@ -277,9 +338,22 @@ class DBCommander(Gtk.Window):
                 "focus-in-event", lambda w, e, p=pane: (self._focus_pane(p, False), False)[1])
         self._focus_pane(self.left, True)
 
+        mid = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        mid.set_valign(Gtk.Align.CENTER)
+        to_right = Gtk.Button(label="→"); to_right.set_tooltip_text("Copy left → right")
+        to_right.set_can_focus(False)
+        to_right.connect("clicked", lambda b: self._copy_between(self.left))
+        to_left = Gtk.Button(label="←"); to_left.set_tooltip_text("Copy right → left")
+        to_left.set_can_focus(False)
+        to_left.connect("clicked", lambda b: self._copy_between(self.right))
+        mid.pack_start(to_right, False, False, 0); mid.pack_start(to_left, False, False, 0)
+
         paned = Gtk.Paned()
         paned.pack1(self.left, True, False)
-        paned.pack2(self.right, True, False)
+        rbox = Gtk.Box(spacing=4)
+        rbox.pack_start(mid, False, False, 0)
+        rbox.pack_start(self.right, True, True, 0)
+        paned.pack2(rbox, True, False)
         paned.set_position(config["window"].get("dbc_paned", w // 2))
         self.paned = paned
 
@@ -294,6 +368,7 @@ class DBCommander(Gtk.Window):
 
         self._owned_conns = []   # SSH connections opened for panes (not the tab's)
         self._bg(self._startup)
+        GLib.idle_add(self.left.view.grab_focus)
 
     # ---- infra ---------------------------------------------------------
     def _bg(self, fn, *a):
@@ -397,7 +472,7 @@ class DBCommander(Gtk.Window):
         ep = pane.endpoint
         from .app import ssh_config_hosts
         d = Gtk.Dialog(title=f"Connect — {pane.side} pane", transient_for=self, flags=0)
-        d.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Connect", Gtk.ResponseType.OK)
+        d.add_buttons("Connect", Gtk.ResponseType.OK, "Cancel", Gtk.ResponseType.CANCEL)
         d.set_default_size(600, 400)
         box = d.get_content_area(); box.set_spacing(6)
         for m in ("start", "end", "top", "bottom"):
@@ -555,7 +630,9 @@ class DBCommander(Gtk.Window):
         sw.add(tv); tv.show_all()
 
     def copy_active(self, move=False):
-        src = self._active
+        self._copy_between(self._active, move)
+
+    def _copy_between(self, src, move=False):
         dst = self.right if src is self.left else self.left
         if dst.endpoint.available is not True:
             self.status.set_text(f"{dst.endpoint.label} side isn't connected"); return

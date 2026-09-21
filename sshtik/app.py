@@ -40,7 +40,7 @@ class ConnectDialog(Gtk.Dialog):
     """Saved hosts list on the left, connection form on the right."""
     def __init__(self, parent):
         super().__init__(title="Connect", transient_for=parent, flags=0)
-        self.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Connect", Gtk.ResponseType.OK)
+        self.add_buttons("Connect", Gtk.ResponseType.OK, "Cancel", Gtk.ResponseType.CANCEL)
         self.set_default_response(Gtk.ResponseType.OK)
         self.set_default_size(620, 360)
         self.result = None
