@@ -161,6 +161,9 @@ class _Pane(Gtk.Box):
         self.get_style_context().add_class("sshtik-pane")
         self.panel, self.fs, self.side = panel, fs, side
         self.cwd = None
+        self.entries = []
+        self.sort_key = None    # None | "name" | "size" | "mtime" | "perm"
+        self.sort_desc = False
         hdr = Gtk.Box(spacing=4)
         self.path_entry = Gtk.Entry()
         self.path_entry.connect("activate", lambda e: self.load(e.get_text()))
@@ -188,14 +191,21 @@ class _Pane(Gtk.Box):
         name_col.add_attribute(name_rend, "text", self.COL_NAME)
         name_col.add_attribute(name_rend, "weight", self.COL_WEIGHT)
         name_col.set_resizable(True); name_col.set_min_width(260)
-        name_col.set_sort_column_id(self.COL_NAME)
         self.view.append_column(name_col)
-        for t, i in (("Size", self.COL_SIZE), ("Modified", self.COL_MTIME), ("Perms", self.COL_PERM)):
+        self.columns = {"name": name_col}
+        for t, i, key in (("Size", self.COL_SIZE, "size"), ("Modified", self.COL_MTIME, "mtime"),
+                          ("Perms", self.COL_PERM, "perm")):
             rend = Gtk.CellRendererText()
             col = Gtk.TreeViewColumn(t, rend, text=i)
             col.set_resizable(True)
-            col.set_sort_column_id(self.COL_BYTES if i == self.COL_SIZE else i)
             self.view.append_column(col)
+            self.columns[key] = col
+        # Manual 3-state sort (off -> ascending -> descending -> off) so "off"
+        # can regroup directories at the top; the arrow is inverted from GTK's
+        # default so a DOWN arrow means newest/largest first.
+        for key, col in self.columns.items():
+            col.set_clickable(True)
+            col.connect("clicked", lambda c, k=key: self._sort_clicked(k))
         self.view.set_grid_lines(Gtk.TreeViewGridLines.VERTICAL)
         stripe(self.view)
         self.view.connect("row-activated", self._activated)
@@ -218,22 +228,62 @@ class _Pane(Gtk.Box):
         self.panel.bg(self._load_bg, path)
 
     def _load_bg(self, path):
-        entries = sorted(self.fs.listdir(path), key=lambda e: (not e[2], e[0].lower()))
+        entries = list(self.fs.listdir(path))
         GLib.idle_add(self._fill, path, entries)
 
     def _fill(self, path, entries):
         self.cwd = path
         self.path_entry.set_text(path)
+        self.entries = entries
+        self._render()
+        self.panel.status.set_text(f"{self.fs.name}: {len(entries)} items in {path}")
+
+    _SORT_KEYS = {
+        "name": lambda e: e[0].lower(),
+        "size": lambda e: e[1],
+        "mtime": lambda e: e[3],
+        "perm": lambda e: stat.S_IMODE(e[4]),
+    }
+
+    def _sorted_entries(self):
+        if self.sort_key is None:           # default: directories first, then A-Z
+            return sorted(self.entries, key=lambda e: (not e[2], e[0].lower()))
+        return sorted(self.entries, key=self._SORT_KEYS[self.sort_key], reverse=self.sort_desc)
+
+    def _render(self):
+        """(Re)build the row list from self.entries under the current sort."""
         self.store.clear()
         self.store.append(["..", "", "", "", "dir", -1, "folder", _W_BOLD])
-        for name, size, is_dir, mtime, mode in entries:
+        for name, size, is_dir, mtime, mode in self._sorted_entries():
             self.store.append([name, "" if is_dir else _human(size),
                                time.strftime("%Y-%m-%d %H:%M", time.localtime(mtime)) if mtime else "",
                                oct(stat.S_IMODE(mode))[2:] if mode else "",
                                "dir" if is_dir else "file", -1 if is_dir else size,
                                "folder" if is_dir else _file_icon(name),
                                _W_BOLD if is_dir else _W_NORMAL])
-        self.panel.status.set_text(f"{self.fs.name}: {len(entries)} items in {path}")
+
+    def _sort_clicked(self, key):
+        """Cycle one column: off -> ascending -> descending -> off. 'off'
+        restores the default order (directories grouped at the top)."""
+        if self.sort_key != key:
+            self.sort_key, self.sort_desc = key, False
+        elif not self.sort_desc:
+            self.sort_desc = True
+        else:
+            self.sort_key = None
+        self._update_sort_indicators()
+        self._render()
+
+    def _update_sort_indicators(self):
+        for k, col in self.columns.items():
+            active = k == self.sort_key
+            col.set_sort_indicator(active)
+            if active:
+                # Invert GTK's arrow: descending (newest/largest first) shows a
+                # DOWN arrow, ascending an UP one. GTK draws DOWN for ASCENDING,
+                # so hand it the opposite of our logical direction.
+                col.set_sort_order(Gtk.SortType.ASCENDING if self.sort_desc
+                                   else Gtk.SortType.DESCENDING)
 
     def refresh(self):
         if self.cwd: self.load(self.cwd)
