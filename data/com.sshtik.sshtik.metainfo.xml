@@ -61,18 +61,15 @@
     <color type="primary" scheme_preference="dark">#1c4e6b</color>
   </branding>
   <releases>
-    <release version="0.2.3" date="2026-09-21">
+    <release version="0.2.4" date="2026-09-21">
       <description>
         <ul>
-          <li>Fix the file (F5) and database (F6) helpers failing to open — a regression in 0.2.2 that also leaked the keypress to the terminal</li>
-        </ul>
-      </description>
-    </release>
-    <release version="0.2.2" date="2026-09-21">
-      <description>
-        <ul>
-          <li>File panel: a mimetype icon on every row (folder, image, script, database, note) and directory names shown in bold</li>
-          <li>File and MySQL panels: the active pane is clearly marked with an accent frame and accent-coloured selection, while the inactive pane's selection is muted — so it is obvious which side the next keystroke acts on</li>
+          <li>File panel: a mimetype icon on every row (folder, image, script, database, note) and directory names in bold</li>
+          <li>Clear active-pane focus across the file and MySQL panels — exactly one blue highlight marks where the keyboard focus is, and it follows you as you tab between panes or into a location bar</li>
+          <li>Navigation follows the cursor: entering a directory (or database) lands on "..", and going back up highlights the one you just left</li>
+          <li>Sortable columns with a three-state cycle (off, ascending, descending) and an inverted arrow, so a down arrow means newest / largest first; directories are grouped at the top</li>
+          <li>MySQL commander gains the same focus, navigation and sorting, plus copy arrows between the two database panes</li>
+          <li>Connect dialogs place Connect on the left and Cancel in the bottom-right</li>
         </ul>
       </description>
     </release>
