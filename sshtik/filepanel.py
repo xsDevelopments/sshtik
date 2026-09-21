@@ -168,7 +168,7 @@ class _Pane(Gtk.Box):
         self.path_entry = Gtk.Entry()
         self.path_entry.connect("activate", lambda e: self.load(e.get_text()))
         up = Gtk.Button.new_from_icon_name("go-up", Gtk.IconSize.BUTTON)
-        up.connect("clicked", lambda b: self.load(os.path.dirname(self.cwd.rstrip("/")) or "/"))
+        up.connect("clicked", lambda b: self._go_up())
         rf = Gtk.Button.new_from_icon_name("view-refresh", Gtk.IconSize.BUTTON)
         rf.connect("clicked", lambda b: self.refresh())
         hdr.pack_start(Gtk.Label(label=fs.name), False, False, 4)
@@ -222,21 +222,49 @@ class _Pane(Gtk.Box):
         self.view.connect("drag-data-received", self._drag_received)
 
     # ---- listing --------------------------------------------------------
-    def load(self, path):
+    def load(self, path, select="..", focus=True):
+        """Load `path`. Once it renders, highlight the row named `select`
+        (default ".."); when `focus` is set, move keyboard focus to the list so
+        the blue highlight follows — skipped for background loads."""
         if self.side == "local":
             path = os.path.expanduser(path)
-        self.panel.bg(self._load_bg, path)
+        self.panel.bg(self._load_bg, path, select, focus)
 
-    def _load_bg(self, path):
+    def _load_bg(self, path, select, focus):
         entries = list(self.fs.listdir(path))
-        GLib.idle_add(self._fill, path, entries)
+        GLib.idle_add(self._fill, path, entries, select, focus)
 
-    def _fill(self, path, entries):
+    def _fill(self, path, entries, select, focus):
         self.cwd = path
         self.path_entry.set_text(path)
         self.entries = entries
         self._render()
         self.panel.status.set_text(f"{self.fs.name}: {len(entries)} items in {path}")
+        if select is not None:
+            self._select_name(select, focus)
+
+    def _select_name(self, name, focus=True):
+        """Put the cursor/selection on the row called `name`, falling back to
+        the top ("..") when it isn't present. With `focus`, grab the list so
+        that row reads blue; otherwise just select it (stays grey)."""
+        if len(self.store) == 0:
+            return
+        idx = next((i for i, r in enumerate(self.store) if r[self.COL_NAME] == name), 0)
+        p = Gtk.TreePath(idx)
+        if focus:
+            self.view.set_cursor(p)          # selects + moves cursor + focuses list
+        else:
+            sel = self.view.get_selection()
+            sel.unselect_all(); sel.select_path(p)
+        self.view.scroll_to_cell(p, None, False, 0, 0)
+
+    def _go_up(self):
+        """Move to the parent directory, highlighting the folder just left so
+        navigation feels continuous."""
+        if not self.cwd:
+            return
+        left = os.path.basename(self.cwd.rstrip("/"))
+        self.load(os.path.dirname(self.cwd.rstrip("/")) or "/", select=left)
 
     _SORT_KEYS = {
         "name": lambda e: e[0].lower(),
@@ -298,7 +326,10 @@ class _Pane(Gtk.Box):
                                    else Gtk.SortType.DESCENDING)
 
     def refresh(self):
-        if self.cwd: self.load(self.cwd)
+        if not self.cwd:
+            return
+        sel = self.selected()          # keep the current row selected across a reload
+        self.load(self.cwd, select=sel[0][0] if sel else "..", focus=self.view.has_focus())
 
     def join(self, name):
         return os.path.join(self.cwd, name)
@@ -333,7 +364,10 @@ class _Pane(Gtk.Box):
     def _activated(self, view, tree_path, col):
         name, kind = self.store[tree_path][self.COL_NAME], self.store[tree_path][self.COL_KIND]
         if kind == "dir":
-            self.load(os.path.normpath(self.join(name)))
+            if name == "..":
+                self._go_up()
+            else:                             # into a subdir: land on ".."
+                self.load(os.path.normpath(self.join(name)))
         elif self.side == "remote":
             self.panel.edit_remote(self.join(name))
         else:
@@ -345,7 +379,7 @@ class _Pane(Gtk.Box):
         if ev.keyval == Gdk.KEY_F2:
             self.rename_selected(); return True
         if ev.keyval == Gdk.KEY_BackSpace:
-            self.load(os.path.dirname(self.cwd.rstrip("/")) or "/"); return True
+            self._go_up(); return True
 
     def _click(self, view, ev):
         if ev.button != 3:
@@ -492,7 +526,7 @@ class FilePanel(Gtk.Window):
         self.add(vb)
 
         self.local.load(config["local_dir"].get(conn.host) or os.getcwd())
-        self.bg(lambda: GLib.idle_add(self.remote.load, conn.shell_cwd() or "."))
+        self.bg(lambda: GLib.idle_add(self.remote.load, conn.shell_cwd() or ".", "..", False))
         # start with the local list focused (blue on a row, not the path bar)
         GLib.idle_add(self.local.view.grab_focus)
 
