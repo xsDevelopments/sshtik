@@ -7,6 +7,7 @@ exec channel (socket auth on that box, so no per-host TCP grants are needed).
 Either pane can be re-pointed at any host in your SSH config — including
 localhost, to reach this machine's own server. F5 copies the highlighted table
 or database to the other side (mysqldump | mysql); F6 moves it."""
+import re
 import shlex
 import threading
 
@@ -19,7 +20,87 @@ from gi.repository import Gtk, Gdk, GLib, Pango, GObject
 from .config import config
 from .connection import SSHConnection
 from .ui import stripe, close_on_escape, pad
-from .dbpanel import q_ident, q_val, _human_bytes, _parse_mysql_argv, AuthError
+from .dbpanel import q_ident, q_val, _human_bytes, _parse_mysql_argv, AuthError, NULL
+
+
+# Row icons for the database list. Icon themes disagree on which names they
+# ship, so each kind is a preference chain; _resolve_icon returns the first the
+# current theme actually has (the file panel does the same for file types). The
+# classic cylinder (x-office-database) stands in for a database, a spreadsheet
+# grid for a table.
+# "db" prefers the canonical database cylinder (x-office-database, present in
+# Adwaita/the Flatpak); where a theme lacks it, a platter-stack disk icon is the
+# closest cylinder before falling back to the flat SQL-page glyph.
+_ICON_CHAINS = {
+    "db":    ("x-office-database", "drive-multidisk", "drive-harddisk", "application-sql"),
+    "table": ("x-office-spreadsheet", "x-office-database", "table", "text-x-generic"),
+    "up":    ("go-up", "go-previous", "folder"),
+}
+_icon_cache = {}
+
+
+def _resolve_icon(kind):
+    """First icon name in the kind's chain that the theme actually has (cached)."""
+    name = _icon_cache.get(kind)
+    if name is None:
+        chain = _ICON_CHAINS[kind]
+        try:
+            theme = Gtk.IconTheme.get_default()
+            name = next((n for n in chain if theme.has_icon(n)), chain[-1])
+        except Exception:
+            name = chain[0]
+        _icon_cache[kind] = name
+    return name
+
+
+# TEXT/BLOB columns can hold tabs, newlines or embedded HTML. Fetching rows with
+# `mysql --batch` (no --raw) escapes control characters, so a stray newline or
+# tab inside a value can no longer split one row into several or shift columns.
+# _batch_unescape turns those escapes back into the real value for the detail
+# form; _cell_display shows a cleaned, single-line, length-capped version in the
+# grid so one giant TEXT field can't wreck the layout.
+_ESCAPES = {"0": "\0", "t": "\t", "n": "\n", "r": "\r", "\\": "\\"}
+
+
+def _batch_unescape(s):
+    if "\\" not in s:
+        return s
+    out, i, n = [], 0, len(s)
+    while i < n:
+        c = s[i]
+        if c == "\\" and i + 1 < n:
+            out.append(_ESCAPES.get(s[i + 1], s[i + 1])); i += 2
+        else:
+            out.append(c); i += 1
+    return "".join(out)
+
+
+def _cell_display(s, limit=200):
+    s = s.replace("\n", " ").replace("\r", " ").replace("\t", " ")
+    return s if len(s) <= limit else s[:limit] + "…"
+
+
+_TEXT_TYPES = {"text", "tinytext", "mediumtext", "longtext", "json",
+               "blob", "tinyblob", "mediumblob", "longblob"}
+
+
+def _enum_values(column_type):
+    """Pull the options out of an enum('a','b') / set('x','y') column type."""
+    return [m.group(1).replace("''", "'")
+            for m in re.finditer(r"'((?:[^']|'')*)'", column_type or "")]
+
+
+def _is_longtext(m):
+    """A column that holds long, possibly multi-line prose: a TEXT/BLOB type, or
+    a roomy varchar/char (>=256). These cap short in the grid and open a
+    multi-line editor in the form."""
+    dt = m.get("data_type", "")
+    if dt in _TEXT_TYPES:
+        return True
+    if dt in ("varchar", "char", "varbinary", "binary"):
+        mo = re.search(r"\((\d+)\)", m.get("column_type", ""))
+        return bool(mo) and int(mo.group(1)) >= 256
+    return False
 
 # Logins entered this session but not saved to disk (survives Esc + reopen).
 _SESSION_LOGINS = {}
@@ -83,8 +164,8 @@ class MySQLEndpoint:
             cmd = "MYSQL_PWD=" + shlex.quote(self.password) + " " + cmd
         return self.conn.run(cmd, timeout=timeout, input=input)
 
-    def query(self, sql, db=None):
-        argv = ["mysql", "--batch", "--raw"] + self._conn_args()
+    def query(self, sql, db=None, raw=True):
+        argv = ["mysql", "--batch"] + (["--raw"] if raw else []) + self._conn_args()
         use = db or self.opts["db"]
         if use:
             argv.append(use)
@@ -95,7 +176,16 @@ class MySQLEndpoint:
             if "Access denied" in msg and "using password" in msg:
                 raise AuthError(msg)
             raise RuntimeError(msg)
-        rows = [line.split("\t") for line in out.splitlines()]
+        if raw:
+            lines = out.splitlines()
+        else:
+            # --batch escapes LF and TAB but NOT carriage return, so split rows
+            # on the LF terminator only. str.splitlines() also breaks on a bare
+            # CR (0x0D), which shreds one row carrying CRLF text into several.
+            lines = out.split("\n")
+            if lines and lines[-1] == "":
+                lines.pop()
+        rows = [line.split("\t") for line in lines]
         return (rows[0], rows[1:]) if rows else ([], [])
 
     def dump(self, db, table=None):
@@ -142,6 +232,41 @@ class MySQLEndpoint:
         _, rows = self.query(q, db=db)
         return rows  # [name, rows, bytes]
 
+    def columns(self, db, table):
+        """Column metadata for a table, in definition order — used to build the
+        row detail form (widget per type, primary key, nullability)."""
+        q = ("SELECT COLUMN_NAME, DATA_TYPE, COLUMN_TYPE, COLUMN_KEY, "
+             "IS_NULLABLE, EXTRA FROM information_schema.COLUMNS "
+             f"WHERE TABLE_SCHEMA={q_val(db)} AND TABLE_NAME={q_val(table)} "
+             "ORDER BY ORDINAL_POSITION")
+        _, rows = self.query(q, db=db)
+        cols = []
+        for r in rows:
+            r = (r + [""] * 6)[:6]
+            cols.append({"name": r[0], "data_type": r[1].lower(),
+                         "column_type": r[2], "key": r[3],
+                         "nullable": r[4] == "YES", "extra": r[5].lower()})
+        return cols
+
+    def table_stats(self, db, table):
+        """Exact row count and on-disk size for the grid's footer."""
+        cnt = size = 0
+        try:
+            _, cr = self.query(f"SELECT COUNT(*) FROM {q_ident(table)}", db=db)
+            if cr and cr[0]:
+                cnt = int(cr[0][0] or 0)
+        except Exception:
+            pass
+        try:
+            _, sr = self.query(
+                "SELECT COALESCE(DATA_LENGTH+INDEX_LENGTH,0) FROM information_schema.TABLES "
+                f"WHERE TABLE_SCHEMA={q_val(db)} AND TABLE_NAME={q_val(table)}", db=db)
+            if sr and sr[0]:
+                size = int(sr[0][0] or 0)
+        except Exception:
+            pass
+        return cnt, size
+
     def create_database(self, name):
         self.query(f"CREATE DATABASE {q_ident(name)}")
 
@@ -160,7 +285,7 @@ class MySQLEndpoint:
 
 # ---------------------------------------------------------------------------
 class _DBPane(Gtk.Box):
-    NAME, ROWS, SIZE, PCT, BYTES, KIND = range(6)
+    NAME, ROWS, SIZE, PCT, BYTES, KIND, ICON = range(7)
 
     def __init__(self, commander, endpoint, side):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -176,10 +301,17 @@ class _DBPane(Gtk.Box):
         self.header.connect("clicked", lambda b: commander.connect_endpoint(self))
         self.pack_start(self.header, False, False, 0)
 
-        self.store = Gtk.ListStore(str, str, str, int, GObject.TYPE_INT64, str)
+        self.store = Gtk.ListStore(str, str, str, int, GObject.TYPE_INT64, str, str)
         self.view = Gtk.TreeView(model=self.store)
         self.view.set_grid_lines(Gtk.TreeViewGridLines.VERTICAL)
-        c0 = Gtk.TreeViewColumn("Name", pad(Gtk.CellRendererText(ellipsize=Pango.EllipsizeMode.END)), text=0)
+        # Name column: a database/table icon, then the name.
+        c0 = Gtk.TreeViewColumn("Name")
+        icon_rend = Gtk.CellRendererPixbuf(); icon_rend.set_property("xpad", 4)
+        c0.pack_start(icon_rend, False)
+        c0.add_attribute(icon_rend, "icon-name", self.ICON)
+        name_rend = pad(Gtk.CellRendererText(ellipsize=Pango.EllipsizeMode.END))
+        c0.pack_start(name_rend, True)
+        c0.add_attribute(name_rend, "text", self.NAME)
         c0.set_expand(True); c0.set_resizable(True); self.view.append_column(c0)
         rr = pad(Gtk.CellRendererText()); rr.set_property("xalign", 1.0)
         c1 = Gtk.TreeViewColumn("Rows", rr, text=1); c1.set_alignment(1.0); self.view.append_column(c1)
@@ -232,13 +364,14 @@ class _DBPane(Gtk.Box):
     def _render(self):
         self.store.clear()
         if self.level_db is not None:
-            self.store.append(["..", "", "", 0, 0, "up"])
+            self.store.append(["..", "", "", 0, 0, "up", _resolve_icon("up")])
         items = self._sorted_items()
         maxb = max([b for _, _, b, _ in items], default=0)
         for name, rows, nbytes, kind in items:
             pct = int(round(nbytes * 100.0 / maxb)) if maxb else 0
             self.store.append([name, f"{rows:,}" if rows is not None else "",
-                               _human_bytes(nbytes), pct, nbytes, kind])
+                               _human_bytes(nbytes), pct, nbytes, kind,
+                               _resolve_icon("db" if kind == "db" else "table")])
 
     def _fill(self, items, select="..", focus=False):
         self.items = items
@@ -607,27 +740,337 @@ class DBCommander(Gtk.Window):
 
     def view_table(self, endpoint, db, table):
         win = Gtk.Window(title=f"{endpoint.label}: {db}.{table}")
-        win.set_default_size(760, 480); win.set_transient_for(self)
+        win.set_default_size(820, 520); win.set_transient_for(self)
         close_on_escape(win)
-        sw = Gtk.ScrolledWindow(); win.add(sw); win.show_all()
+        sw = Gtk.ScrolledWindow()
+        info = Gtk.Label(xalign=0); info.set_ellipsize(Pango.EllipsizeMode.END)
+        newb = Gtk.Button(label="New Record"); backb = Gtk.Button(label="Back")
+        bar = Gtk.Box(spacing=6)
+        for side in ("start", "end", "top", "bottom"):
+            getattr(bar, f"set_margin_{side}")(6)
+        bar.pack_start(info, True, True, 4)          # bottom-left: totals
+        bar.pack_start(newb, False, False, 0)        # bottom-right: New Record · Back
+        bar.pack_start(backb, False, False, 0)
+        vb = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        vb.pack_start(sw, True, True, 0)
+        vb.pack_start(bar, False, False, 0)
+        win.add(vb); win.show_all()
+
+        ctx = {"endpoint": endpoint, "db": db, "table": table, "win": win,
+               "sw": sw, "info": info, "cols": [], "meta": []}
+        newb.connect("clicked", lambda b: self._row_form(ctx, None, None, None))
+        backb.connect("clicked", lambda b: win.destroy())
+        self._reload_table(ctx)
+
+    def _reload_table(self, ctx):
+        endpoint, db, table = ctx["endpoint"], ctx["db"], ctx["table"]
+
         def work():
-            cols, rows = endpoint.query(f"SELECT * FROM {q_ident(table)} LIMIT 500", db=db)
-            GLib.idle_add(self._fill_rows, sw, cols, rows)
+            cols, rows = endpoint.query(
+                f"SELECT * FROM {q_ident(table)} LIMIT 500", db=db, raw=False)
+            try:
+                meta = endpoint.columns(db, table)
+            except Exception:
+                meta = []
+            cnt, size = endpoint.table_stats(db, table)
+            GLib.idle_add(self._fill_rows, ctx, cols, rows, meta, cnt, size)
         self._bg(work)
 
-    def _fill_rows(self, sw, cols, rows):
+    def _fill_rows(self, ctx, cols, rows, meta, cnt, size):
+        ctx["cols"], ctx["meta"] = cols, meta
+        db, table, sw = ctx["db"], ctx["table"], ctx["sw"]
+        shown = f"  (showing first {len(rows)})" if cnt > len(rows) else ""
+        ctx["info"].set_text(
+            f"Total records in {db} › {table} : {cnt:,} · {_human_bytes(size)}{shown}")
         if not cols:
+            for ch in sw.get_children():
+                sw.remove(ch)
             return
+        # Real values (un-escaped) drive the detail form; the grid shows a
+        # cleaned, single-line, length-capped copy so embedded HTML/newlines
+        # can't break the table structure. TEXT/BLOB columns cap short (40) —
+        # they hold the long, multi-line, CRLF-laden content; open the row to
+        # read the whole thing.
+        by_name = {m["name"]: m for m in meta}
+        limits = [40 if _is_longtext(by_name.get(c, {})) else 200 for c in cols]
+        ctx["limits"] = limits
+        real_rows = [[_batch_unescape(v) for v in (r + [""] * len(cols))[:len(cols)]]
+                     for r in rows]
         store = Gtk.ListStore(*([str] * len(cols)))
-        for r in rows:
-            store.append((r + [""] * len(cols))[:len(cols)])
+        for rr in real_rows:
+            store.append([_cell_display(v, limits[i]) for i, v in enumerate(rr)])
         tv = Gtk.TreeView(model=store)
         tv.set_grid_lines(Gtk.TreeViewGridLines.VERTICAL)
+        tv.get_selection().set_mode(Gtk.SelectionMode.SINGLE)
+        # Flex each column to fit its widest cell, clamped so thin columns stay
+        # legible and one big TEXT column can't blow out the grid.
+        sample = real_rows[:60]
         for i, c in enumerate(cols):
-            col = Gtk.TreeViewColumn(c.replace("_", "__"), pad(Gtk.CellRendererText(ellipsize=Pango.EllipsizeMode.END)), text=i)
-            col.set_resizable(True); tv.append_column(col)
+            longest = max([len(c)] + [len(_cell_display(r[i], limits[i])) for r in sample])
+            width = max(70, min(20 + longest * 8, 420))
+            col = Gtk.TreeViewColumn(c.replace("_", "__"),
+                                     pad(Gtk.CellRendererText(ellipsize=Pango.EllipsizeMode.END)), text=i)
+            col.set_sizing(Gtk.TreeViewColumnSizing.FIXED)
+            col.set_fixed_width(width); col.set_min_width(48); col.set_resizable(True)
+            tv.append_column(col)
         stripe(tv)
+        # Double-click or Enter on a row opens it as a form.
+        tv.connect("row-activated", lambda v, p, c: self._row_form(
+            ctx, real_rows, store, p.get_indices()[0]))
+        for ch in sw.get_children():
+            sw.remove(ch)
         sw.add(tv); tv.show_all()
+
+    # ---- single-row detail form ----------------------------------------
+    def _field_widget(self, m, val):
+        """A form widget for one column, chosen by its type. Returns
+        (widget, get, set): get() yields the current string (or None if the
+        field is read-only), set(v) restores a value for Revert."""
+        dt = m.get("data_type", ""); ct = m.get("column_type", "")
+        readonly = "auto_increment" in m.get("extra", "") or "generated" in m.get("extra", "")
+        if dt == "enum":
+            options = _enum_values(ct)
+            combo = Gtk.ComboBoxText(); combo.set_hexpand(True)
+            for opt in options:
+                combo.append_text(opt)
+            if val in options:
+                combo.set_active(options.index(val))
+            combo.set_sensitive(not readonly)
+            return (combo,
+                    (lambda: None if readonly else (combo.get_active_text() or "")),
+                    (lambda v: combo.set_active(options.index(v) if v in options else -1)))
+        if ct == "tinyint(1)":                # MySQL's conventional boolean
+            chk = Gtk.CheckButton(); chk.set_active(val not in ("", "0", NULL))
+            chk.set_sensitive(not readonly)
+            return (chk,
+                    (lambda: None if readonly else ("1" if chk.get_active() else "0")),
+                    (lambda v: chk.set_active(v not in ("", "0", NULL))))
+        if _is_longtext(m):
+            tv = Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD_CHAR)
+            tv.set_editable(not readonly); tv.set_sensitive(not readonly)
+            tv.get_buffer().set_text(val)
+            box = Gtk.ScrolledWindow(); box.set_size_request(-1, 96); box.set_hexpand(True)
+            box.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+            box.set_shadow_type(Gtk.ShadowType.IN); box.add(tv)
+            def get_tv():
+                if readonly:
+                    return None
+                b = tv.get_buffer(); return b.get_text(*b.get_bounds(), True)
+            return box, get_tv, (lambda v: tv.get_buffer().set_text(v))
+        e = Gtk.Entry(); e.set_text(val); e.set_hexpand(True)
+        e.set_editable(not readonly); e.set_sensitive(not readonly)
+        return e, (lambda: None if readonly else e.get_text()), (lambda v: e.set_text(v))
+
+    @staticmethod
+    def _row_identity(cols, by_name):
+        """Columns that pick out one row for UPDATE/DELETE, tightest first:
+        PRIMARY, then UNIQUE, then an auto-increment column (unique in practice
+        even when indexed non-uniquely, as MySQL allows). Failing all of those,
+        match the whole row on its non-text columns (with LIMIT 1). Returns
+        (columns, kind)."""
+        pri = [c for c in cols if by_name.get(c, {}).get("key") == "PRI"]
+        if pri:
+            return pri, "primary"
+        uni = [c for c in cols if by_name.get(c, {}).get("key") == "UNI"]
+        if uni:
+            return uni, "unique"
+        auto = [c for c in cols if "auto_increment" in by_name.get(c, {}).get("extra", "")]
+        if auto:
+            return auto, "auto"
+        return [c for c in cols if not _is_longtext(by_name.get(c, {}))], "full"
+
+    @staticmethod
+    def _where(ident, orig):
+        """WHERE clause matching the row's original values (NULL-safe)."""
+        return " AND ".join(
+            (f"{q_ident(c)} IS NULL" if orig[c] == NULL else f"{q_ident(c)}={q_val(orig[c])}")
+            for c in ident)
+
+    def _row_form(self, ctx, real_rows, store, idx):
+        """Open one row as a form — a widget per column. Editing an existing row
+        (idx set) offers Save / Revert / Back plus a red Delete; New Record
+        (idx None) offers the same minus Delete, and Save inserts."""
+        endpoint, db, table = ctx["endpoint"], ctx["db"], ctx["table"]
+        meta = ctx["meta"]
+        cols = ctx["cols"] or [m["name"] for m in meta]
+        is_new = idx is None
+        values = None if is_new else real_rows[idx]
+        orig = {c: "" for c in cols} if is_new else {c: values[i] for i, c in enumerate(cols)}
+        by_name = {m["name"]: m for m in meta}
+        pk = [m["name"] for m in meta if m["key"] == "PRI" and m["name"] in cols]
+        ident, ident_kind = self._row_identity(cols, by_name)
+        # A multi-line editor can't faithfully round-trip a bare CR, so normalise
+        # CRLF/CR to LF up front — display is clean and an untouched field won't
+        # look "changed". Editing such a field then saves it CR-free (the fix the
+        # user is after anyway).
+        for c in cols:
+            if _is_longtext(by_name.get(c, {})):
+                orig[c] = orig[c].replace("\r\n", "\n").replace("\r", "\n")
+
+        win = Gtk.Window(title=f"{endpoint.label}: {db}.{table} — "
+                               + ("new record" if is_new else "row"))
+        win.set_default_size(480, 540); win.set_transient_for(ctx["win"])
+        close_on_escape(win)
+
+        grid = Gtk.Grid(row_spacing=8, column_spacing=10)
+        for side in ("start", "end", "top", "bottom"):
+            getattr(grid, f"set_margin_{side}")(12)
+        getters, setters = {}, {}
+        for row_i, c in enumerate(cols):
+            m = by_name.get(c, {"data_type": "", "column_type": "", "extra": "",
+                                "nullable": True, "key": ""})
+            lab = Gtk.Label(xalign=1, yalign=0.0)
+            lab.set_max_width_chars(26); lab.set_line_wrap(True)
+            lab.set_markup(
+                f"<b>{GLib.markup_escape_text(c + ('  (PK)' if c in pk else ''))}</b>\n"
+                f"<small><span alpha='55%'>{GLib.markup_escape_text(m.get('column_type') or m.get('data_type') or '')}</span></small>")
+            grid.attach(lab, 0, row_i, 1, 1)
+            widget, get, setv = self._field_widget(m, orig[c])
+            grid.attach(widget, 1, row_i, 1, 1)
+            getters[c], setters[c] = get, setv
+
+        gsw = Gtk.ScrolledWindow()
+        gsw.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        gsw.add(grid)
+
+        if ident_kind == "primary":
+            keynote = ""
+        elif ident_kind in ("unique", "auto") and ident:
+            keynote = f"  No primary key — identifying the row by {', '.join(ident)}."
+        elif ident:
+            keynote = "  No unique key — updates and deletes match the full row, one at a time."
+        else:
+            keynote = "  This row has no safe identifier — it can't be saved or deleted."
+        hint = Gtk.Label(xalign=0, wrap=True)
+        hint.get_style_context().add_class("dim-label")
+        hint.set_text(("Empty a nullable field to store NULL; auto-increment keys fill themselves."
+                       if is_new else
+                       "Only changed fields are written. Empty a nullable field to store NULL.")
+                      + ("" if is_new else keynote))
+        hint.set_margin_start(12); hint.set_margin_end(12)
+
+        # Delete sits bottom-left (edit only); Save · Revert · Back bottom-right.
+        bar = Gtk.Box(spacing=6)
+        for side in ("start", "end", "bottom"):
+            getattr(bar, f"set_margin_{side}")(10)
+        save = Gtk.Button(label="Save"); save.get_style_context().add_class("suggested-action")
+        save.set_sensitive(bool(ident) or is_new)
+        revert = Gtk.Button(label="Revert"); back = Gtk.Button(label="Back")
+        if not is_new:
+            delete = Gtk.Button(label="Delete")
+            delete.get_style_context().add_class("destructive-action")
+            delete.set_sensitive(bool(ident))
+            bar.pack_start(delete, False, False, 0)
+        bar.pack_end(back, False, False, 0)         # packed end-first -> rightmost
+        bar.pack_end(revert, False, False, 0)
+        bar.pack_end(save, False, False, 0)         # Save · Revert · Back
+
+        def on_revert(_b):
+            for c in cols:
+                setters[c](orig[c])
+            self.status.set_text("Reverted")
+
+        def on_save(_b):
+            if is_new:
+                names, vals = [], []
+                for c in cols:
+                    m = by_name.get(c, {})
+                    if "auto_increment" in m.get("extra", "") or "generated" in m.get("extra", ""):
+                        continue
+                    newv = getters[c]()
+                    if newv is None:
+                        continue
+                    names.append(c)
+                    vals.append(None if (newv == "" and m.get("nullable")) else newv)
+                if not names:
+                    self.status.set_text("Nothing to insert"); return
+                sql = (f"INSERT INTO {q_ident(db)}.{q_ident(table)} "
+                       f"({', '.join(q_ident(c) for c in names)}) "
+                       f"VALUES ({', '.join(q_val(v) for v in vals)})")
+                if not self.confirm(f"Insert a new row into {db}.{table}?\n\n{sql}"):
+                    return
+                self._exec_form_sql(sql, endpoint, db, win, ctx,
+                                    f"Inserted a row into {db}.{table}")
+                return
+            changed = {}
+            for c in cols:
+                m = by_name.get(c, {})
+                if "auto_increment" in m.get("extra", "") or "generated" in m.get("extra", ""):
+                    continue
+                newv = getters[c]()
+                if newv is None:                  # read-only widget
+                    continue
+                if newv == "" and m.get("nullable"):   # empty nullable field -> NULL
+                    if orig[c] != NULL:
+                        changed[c] = None
+                elif newv != orig[c]:
+                    changed[c] = newv
+            if not changed:
+                self.status.set_text("No changes to save"); return
+            if not ident:
+                self.status.set_text("Can't save: no way to identify this row"); return
+            where = self._where(ident, orig)
+            sets = ", ".join(f"{q_ident(c)}={q_val(v)}" for c, v in changed.items())
+            sql = f"UPDATE {q_ident(db)}.{q_ident(table)} SET {sets} WHERE {where} LIMIT 1"
+            if not self.confirm(f"Save {len(changed)} change(s) to this row?\n\n{sql}"):
+                return
+
+            def applied():
+                lims = ctx.get("limits") or [200] * len(cols)
+                for c, v in changed.items():
+                    nv = NULL if v is None else v
+                    ci = cols.index(c)
+                    orig[c] = nv
+                    values[ci] = nv
+                    store[idx][ci] = _cell_display(nv, lims[ci])
+                self.status.set_text(f"Saved {len(changed)} change(s) to {db}.{table}")
+
+            def work():
+                try:
+                    endpoint.query(sql, db=db)
+                    GLib.idle_add(applied)
+                except Exception as e:
+                    GLib.idle_add(self.status.set_text, str(e))
+            self._bg(work)
+
+        def on_delete(_b):
+            if not ident:
+                return
+            where = self._where(ident, orig)
+            sql = f"DELETE FROM {q_ident(db)}.{q_ident(table)} WHERE {where} LIMIT 1"
+            if not self.confirm(f"Delete this row from {db}.{table}?\n\n{sql}"
+                                "\n\nThis cannot be undone."):
+                return
+            self._exec_form_sql(sql, endpoint, db, win, ctx,
+                                f"Deleted 1 row from {db}.{table}")
+
+        revert.connect("clicked", on_revert)
+        save.connect("clicked", on_save)
+        back.connect("clicked", lambda _b: win.destroy())
+        if not is_new:
+            delete.connect("clicked", on_delete)
+
+        vb = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        vb.pack_start(gsw, True, True, 0)
+        vb.pack_start(hint, False, False, 0)
+        vb.pack_start(bar, False, False, 0)
+        win.add(vb); win.show_all()
+
+    def _exec_form_sql(self, sql, endpoint, db, win, ctx, ok_msg):
+        """Run an insert/delete from a row form, then close it and reload the
+        grid so the totals and rows reflect the change."""
+        def work():
+            try:
+                endpoint.query(sql, db=db)
+                GLib.idle_add(done)
+            except Exception as e:
+                GLib.idle_add(self.status.set_text, str(e))
+
+        def done():
+            self.status.set_text(ok_msg)
+            win.destroy()
+            self._reload_table(ctx)
+        self._bg(work)
 
     def copy_active(self, move=False):
         self._copy_between(self._active, move)
