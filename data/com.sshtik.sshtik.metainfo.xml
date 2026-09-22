@@ -32,12 +32,16 @@
       <image>https://raw.githubusercontent.com/xsDevelopments/sshtik/main/site/sshtik-ssh.png</image>
     </screenshot>
     <screenshot>
-      <caption>F5: file transfer, remote pane already in the shell's directory</caption>
+      <caption>F5: a dual-pane file manager, remote pane already in the shell's directory</caption>
       <image>https://raw.githubusercontent.com/xsDevelopments/sshtik/main/site/sshtik-sftp.png</image>
     </screenshot>
     <screenshot>
-      <caption>F6: database browser with an editable grid, on the same connection</caption>
+      <caption>F6: a two-pane database commander, copying tables between two servers</caption>
       <image>https://raw.githubusercontent.com/xsDevelopments/sshtik/main/site/sshtik-mysql.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>F6: open any table's rows in a data grid</caption>
+      <image>https://raw.githubusercontent.com/xsDevelopments/sshtik/main/site/sshtik-mysql2.png</image>
     </screenshot>
     <screenshot>
       <caption>Saved hosts plus everything from ~/.ssh/config</caption>
