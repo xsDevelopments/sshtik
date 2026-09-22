@@ -65,6 +65,17 @@
     <color type="primary" scheme_preference="dark">#1c4e6b</color>
   </branding>
   <releases>
+    <release version="0.2.5" date="2026-09-22">
+      <description>
+        <ul>
+          <li>Database commander shows a database or table icon on every row</li>
+          <li>The data grid sizes each column to its content and keeps long TEXT on a single line, so carriage returns or embedded HTML no longer split one row across the table</li>
+          <li>Double-click or Enter on a row opens it as a form — a widget matched to each column (multi-line text, enum dropdown, boolean checkbox, entry) with Save, Revert, Back and a red Delete</li>
+          <li>The grid footer shows the total record count and size, alongside New Record and Back</li>
+          <li>Editing and deleting now work on tables without a primary key, keyed on a unique or auto-increment column</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.2.4" date="2026-09-21">
       <description>
         <ul>
