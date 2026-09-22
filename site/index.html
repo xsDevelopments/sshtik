@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>sshTIK — SSH terminal with pop-up SFTP and MySQL helpers</title>
-<meta name="description" content="sshTIK is a Linux SSH terminal that stays out of your way until you press F5 for a file transfer window or F6 for a database browser — both riding on the session you already have open.">
+<meta name="description" content="sshTIK is a Linux SSH terminal that stays out of your way until you press F5 for a dual-pane file manager or F6 for a two-pane database commander that copies tables and whole databases between servers — both riding on the session you already have open.">
 <link rel="icon" href="data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiB2aWV3Qm94PSIwIDAgMTI4IDEyOCI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImJnIiB4MT0iMCIgeTE9IjAiIHgyPSIwIiB5Mj0iMSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCIgc3RvcC1jb2xvcj0iIzVmYjNkOSIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiMxYzRlNmIiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImJvZHkiIHgxPSIwIiB5MT0iMCIgeDI9IjAiIHkyPSIxIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjZmZkMTY2Ii8+CiAgICAgIDxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iI2Y0YTEyNSIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICA8L2RlZnM+CiAgPCEtLSByb3VuZGVkIGJhY2tncm91bmQgLS0+CiAgPHJlY3QgeD0iNCIgeT0iNCIgd2lkdGg9IjEyMCIgaGVpZ2h0PSIxMjAiIHJ4PSIyNiIgZmlsbD0idXJsKCNiZykiLz4KICA8IS0tIHRlcm1pbmFsIHByb21wdCBpbiB0aGUgY29ybmVyIC0tPgogIDx0ZXh0IHg9IjE2IiB5PSIxMTIiIGZvbnQtZmFtaWx5PSJtb25vc3BhY2UiIGZvbnQtc2l6ZT0iMTYiIGZvbnQtd2VpZ2h0PSJib2xkIiBmaWxsPSIjZmZmZmZmIiBvcGFjaXR5PSIwLjU1Ij4mZ3Q7XzwvdGV4dD4KICA8IS0tIHRhaWwgLS0+CiAgPHBhdGggZD0iTTk2IDY0IEwxMTggNDYgTDExMiA2NCBMMTE4IDgyIFoiIGZpbGw9InVybCgjYm9keSkiIHN0cm9rZT0iIzhhNWExMCIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CiAgPCEtLSBib2R5IC0tPgogIDxlbGxpcHNlIGN4PSI2MiIgY3k9IjY0IiByeD0iNDAiIHJ5PSIyNiIgZmlsbD0idXJsKCNib2R5KSIgc3Ryb2tlPSIjOGE1YTEwIiBzdHJva2Utd2lkdGg9IjIuNSIvPgogIDwhLS0gc3RyaXBlcyAocGlsb3RmaXNoISkgLS0+CiAgPHBhdGggZD0iTTU4IDQwIFE1NiA2NCA1OCA4OCIgc3Ryb2tlPSIjMWM0ZTZiIiBzdHJva2Utd2lkdGg9IjUiIGZpbGw9Im5vbmUiIG9wYWNpdHk9IjAuNyIvPgogIDxwYXRoIGQ9Ik03NCA0MiBRNzIgNjQgNzQgODYiIHN0cm9rZT0iIzFjNGU2YiIgc3Ryb2tlLXdpZHRoPSI1IiBmaWxsPSJub25lIiBvcGFjaXR5PSIwLjciLz4KICA8IS0tIGRvcnNhbCArIGJlbGx5IGZpbnMgLS0+CiAgPHBhdGggZD0iTTUyIDQwIFE2MCAyMiA3MiAzOCBaIiBmaWxsPSIjZjRhMTI1IiBzdHJva2U9IiM4YTVhMTAiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPgogIDxwYXRoIGQ9Ik01NiA4OCBRNjIgMTAyIDcyIDg4IFoiIGZpbGw9IiNmNGExMjUiIHN0cm9rZT0iIzhhNWExMCIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CiAgPCEtLSBnb2dnbGVzOiBzdHJhcCAtLT4KICA8cGF0aCBkPSJNNDYgNTIgUTYwIDQ0IDc4IDUwIiBzdHJva2U9IiMyYjJiMmIiIHN0cm9rZS13aWR0aD0iNCIgZmlsbD0ibm9uZSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+CiAgPCEtLSBnb2dnbGVzOiBsZW5zZXMgLS0+CiAgPGNpcmNsZSBjeD0iMzgiIGN5PSI1OCIgcj0iMTEiIGZpbGw9IiNlOGY3ZmYiIHN0cm9rZT0iIzJiMmIyYiIgc3Ryb2tlLXdpZHRoPSI0Ii8+CiAgPGNpcmNsZSBjeD0iMzgiIGN5PSI1OCIgcj0iNCIgZmlsbD0iIzFjMWMxYyIvPgogIDxjaXJjbGUgY3g9IjM1IiBjeT0iNTUiIHI9IjIiIGZpbGw9IiNmZmZmZmYiLz4KICA8IS0tIG1vdXRoIC0tPgogIDxwYXRoIGQ9Ik0yNCA2OCBRMjggNzIgMzIgNjkiIHN0cm9rZT0iIzhhNWExMCIgc3Ryb2tlLXdpZHRoPSIyLjUiIGZpbGw9Im5vbmUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgo8L3N2Zz4K" type="image/svg+xml">
 <style>
   :root {
@@ -34,10 +34,12 @@
   code { font-family: ui-monospace, Menlo, Consolas, monospace; background: var(--code); padding: 1px 5px; border-radius: 5px; font-size: .92em; }
   ul { padding-left: 22px; } li { margin: 4px 0; }
   a { color: var(--accent); }
-  .shots { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; margin: 16px 0 28px; }
-  .shots figure { margin: 0; }
-  .shots img { width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--line); box-shadow: 0 6px 18px rgba(0,0,0,.18); }
-  .shots figcaption { font-size: .9rem; color: var(--muted); margin-top: 6px; }
+  .feature { margin: 12px 0 28px; }
+  .feature figure { margin: 0 0 34px; }
+  .feature img { display: block; width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--line); box-shadow: 0 12px 34px rgba(0,0,0,.22); }
+  .feature figcaption { margin-top: 12px; font-size: 1rem; line-height: 1.5; }
+  .feature figcaption b { color: var(--fg); }
+  .feature figcaption span { color: var(--muted); }
   .btns { display: flex; gap: 12px; flex-wrap: wrap; margin: 20px 0 0; }
   .btn { display: inline-block; padding: 10px 18px; border-radius: 10px; text-decoration: none; font-weight: 600; border: 1px solid var(--line); background: var(--card); color: var(--fg); }
   .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -61,12 +63,12 @@
     <div class="key">
       <kbd>F5</kbd>
       <h3>Files</h3>
-      <p>A dual-pane SFTP window opens with the remote side already sitting in the directory your shell is in, and your local machine on the other side. Drag, drop, recurse, rename, chmod. Double-click a remote file to edit it in your local editor — every save uploads.</p>
+      <p>A dual-pane file manager opens over SFTP — the remote side already in your shell's directory, your local machine opposite. Type-aware icons, folders grouped first, three-state column sorting, drag-and-drop, recursive copy and move, rename, chmod, delete. Double-click a remote file to edit it in your local editor; every save uploads.</p>
     </div>
     <div class="key">
       <kbd>F6</kbd>
       <h3>Database</h3>
-      <p>Sitting at a <code>mysql</code> prompt? Press F6 and a browser opens for that same server: schema tree, editable data grid, table structure, query history, CSV export. It picks up the user and database from the client you already launched.</p>
+      <p>A two-pane database commander in the same style: the server you're on beside any other host from your SSH config. Copy or move whole tables and entire databases between them (a <code>mysqldump</code> piped straight into <code>mysql</code>), create and drop databases, and open any table's rows — all over the SSH sessions you already have.</p>
     </div>
   </div>
 
@@ -76,12 +78,28 @@
   </p>
 
 
-  <h2>What it looks like</h2>
-  <div class="shots">
-    <figure><a href="sshtik-ssh.png"><img src="sshtik-ssh.png" alt="A plain SSH terminal until you press a function key" loading="lazy"></a><figcaption>A plain SSH terminal until you press a function key</figcaption></figure>
-    <figure><a href="sshtik-sftp.png"><img src="sshtik-sftp.png" alt="F5: file transfer, remote pane already in the shell's directory" loading="lazy"></a><figcaption>F5: file transfer, remote pane already in the shell's directory</figcaption></figure>
-    <figure><a href="sshtik-mysql.png"><img src="sshtik-mysql.png" alt="F6: database browser with an editable grid, on the same connection" loading="lazy"></a><figcaption>F6: database browser with an editable grid, on the same connection</figcaption></figure>
-    <figure><a href="sshtik-connect.png"><img src="sshtik-connect.png" alt="Saved hosts plus everything from ~/.ssh/config" loading="lazy"></a><figcaption>Saved hosts plus everything from ~/.ssh/config</figcaption></figure>
+  <h2>See it in action</h2>
+  <div class="feature">
+    <figure>
+      <a href="sshtik-ssh.png"><img src="sshtik-ssh.png" alt="A plain SSH terminal until you press a function key" loading="lazy"></a>
+      <figcaption><b>Just a terminal — until a function key.</b> <span>Tabs, saved hosts, agent, key and password auth. It connects and behaves like the <code>ssh</code> you already know.</span></figcaption>
+    </figure>
+    <figure>
+      <a href="sshtik-sftp.png"><img src="sshtik-sftp.png" alt="F5: dual-pane file manager, remote pane already in the shell's directory, mid-copy" loading="lazy"></a>
+      <figcaption><b>F5 — the file commander.</b> <span>Local beside remote, with the remote pane already sitting in your shell's directory. Type-aware icons, folders-first sorting and a Midnight-Commander key bar — caught here mid-copy of 16 files.</span></figcaption>
+    </figure>
+    <figure>
+      <a href="sshtik-mysql.png"><img src="sshtik-mysql.png" alt="F6: two-pane database commander copying tables between two servers" loading="lazy"></a>
+      <figcaption><b>F6 — the database commander.</b> <span>The same two-pane idea for MySQL: a different server on each side. Here it's copying two tables from a database on <code>server-yorkshire</code> straight into <code>server-dusseldorf</code>.</span></figcaption>
+    </figure>
+    <figure>
+      <a href="sshtik-mysql2.png"><img src="sshtik-mysql2.png" alt="F6: opening a table's rows in a data grid" loading="lazy"></a>
+      <figcaption><b>Open any table's rows.</b> <span>Enter (or F3) on a table pops its rows up in a grid, read straight from the live server.</span></figcaption>
+    </figure>
+    <figure>
+      <a href="sshtik-connect.png"><img src="sshtik-connect.png" alt="Saved hosts plus everything from ~/.ssh/config" loading="lazy"></a>
+      <figcaption><b>Everything from your <code>~/.ssh/config</code>.</b> <span>Your saved hosts alongside the Host entries you already keep, ready to pick.</span></figcaption>
+    </figure>
   </div>
   <div class="btns">
     <a class="btn primary" href="https://github.com/xsDevelopments/sshtik">Source on GitHub</a>
@@ -113,10 +131,12 @@ sshtik user@host -p 22</pre>
 
   <h2>How it works</h2>
   <p>
-    One SSH transport, several channels. The terminal is an interactive shell channel. The file panel is the SFTP subsystem
-    on the same transport. The helpers learn what you're doing through short exec channels: the remote shell's
-    current directory comes from <code>/proc/&lt;pid&gt;/cwd</code>, and the running <code>mysql</code> client's arguments
-    from its command line. Nothing is scraped off the screen.
+    One SSH transport, several channels. The terminal is an interactive shell channel; the file panel is the SFTP
+    subsystem on the same transport. The helpers learn what you're doing through short exec channels — the shell's
+    current directory from <code>/proc/&lt;pid&gt;/cwd</code>, the running <code>mysql</code> client's user and host from
+    its command line. Nothing is scraped off the screen. Either database pane can also point at another host in your
+    <code>~/.ssh/config</code> and run <code>mysql</code> there over its own hidden session, so a copy between two
+    servers never leaves the app.
   </p>
 
   <footer>
