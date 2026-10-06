@@ -65,6 +65,14 @@
     <color type="primary" scheme_preference="dark">#1c4e6b</color>
   </branding>
   <releases>
+    <release version="0.2.6" date="2026-10-06">
+      <description>
+        <ul>
+          <li>Database commander shows exact row counts: the table list refines InnoDB's estimated TABLE_ROWS with a real COUNT(*) once the list is on screen, so the number matches the data</li>
+          <li>When key authentication fails with no ssh-agent key reachable, the password prompt explains why and how to fix it — aimed at menu-launched Flatpaks that don't inherit the shell's agent</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.2.5" date="2026-09-22">
       <description>
         <ul>
