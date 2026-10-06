@@ -60,7 +60,7 @@ modules:
       - -Dglade=false
       - -D_systemd=false
     cleanup:
-      - /bin
+      - /bin/vte-2.91   # just VTE's helper, NOT all of /bin (that holds the app launcher)
       - /include
       - /lib/pkgconfig
       - /share/vala
