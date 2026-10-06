@@ -9,7 +9,12 @@ ARCH=$(flatpak --default-arch)
 OUT="dist/sshtik-${VERSION}-${ARCH}.flatpak"
 mkdir -p dist
 
-flatpak run org.flatpak.Builder --force-clean --repo=repo build-dir packaging/com.sshtik.sshtik.yml
+# --disable-rofiles-fuse: cleanup via plain copies instead of a FUSE overlay.
+# When org.flatpak.Builder runs as a Flatpak without working rofiles-fuse (seen
+# on MX Linux), the cleanup pass corrupts the result — e.g. drops /app/bin/sshtik
+# so "Finishing app" fails with "Command 'sshtik' not found". Copies are a touch
+# slower but portable across hosts.
+flatpak run org.flatpak.Builder --force-clean --disable-rofiles-fuse --repo=repo build-dir packaging/com.sshtik.sshtik.yml
 flatpak build-bundle repo "$OUT" com.sshtik.sshtik \
     --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo
 
