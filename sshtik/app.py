@@ -9,7 +9,7 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk
 
 from .config import config
-from .connection import SSHConnection
+from .connection import SSHConnection, agent_auth_hint
 from .terminal import SSHTerminal
 from .filepanel import FilePanel
 from .dbpanel import DBPanel
@@ -191,10 +191,13 @@ class MainWindow(Gtk.Window):
         else:
             d.destroy()
 
-    def _ask_password(self, prompt):
+    def _ask_password(self, prompt, hint=None):
         d = Gtk.Dialog(title="Password", transient_for=self, flags=0)
         d.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "OK", Gtk.ResponseType.OK)
         box = d.get_content_area(); box.set_spacing(6); box.set_margin_start(12); box.set_margin_end(12)
+        if hint:
+            h = Gtk.Label(label=hint, xalign=0); h.set_line_wrap(True); h.set_max_width_chars(52)
+            h.get_style_context().add_class("dim-label"); box.add(h)
         box.add(Gtk.Label(label=prompt))
         e = Gtk.Entry(visibility=False, activates_default=True); box.add(e)
         d.set_default_response(Gtk.ResponseType.OK); d.show_all()
@@ -212,7 +215,8 @@ class MainWindow(Gtk.Window):
                 return SSHConnection(host, user=user, port=port, password=password,
                                      via=via, resolved=resolved)
             except paramiko.AuthenticationException:
-                password = self._ask_password(f"Password for {where}:")
+                password = self._ask_password(f"Password for {where}:",
+                                              hint=agent_auth_hint())
                 if password is None:
                     return None
             except Exception as e:

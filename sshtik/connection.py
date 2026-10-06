@@ -84,6 +84,22 @@ def ensure_ssh_agent():
     return best
 
 
+def agent_auth_hint():
+    """A short explanation to show when key auth fails because no agent key was
+    reachable — the usual cause when the app is launched from a desktop menu
+    (especially as a Flatpak) and never inherits the shell's SSH_AUTH_SOCK.
+    Returns '' when the agent does hold keys (so the failure is something else)."""
+    if (_agent_key_count(os.environ.get("SSH_AUTH_SOCK")) or 0) > 0:
+        return ""
+    if os.path.exists("/.flatpak-info"):
+        return ("No ssh-agent key reached the sandbox. Launched from a menu, the "
+                "Flatpak may not inherit your agent — run a fixed-path agent at "
+                "~/.ssh/ssh-agent.sock, or export SSH_AUTH_SOCK to the desktop "
+                "session, then reopen sshTIK.")
+    return ("No ssh-agent key was available — load your key with `ssh-add`, or "
+            "check that SSH_AUTH_SOCK points at your agent.")
+
+
 class _LockingSFTP:
     """Serialises access to a paramiko SFTPClient across threads.
 

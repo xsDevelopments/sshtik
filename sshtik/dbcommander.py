@@ -18,7 +18,7 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GLib, Pango, GObject
 
 from .config import config
-from .connection import SSHConnection
+from .connection import SSHConnection, agent_auth_hint
 from .ui import stripe, close_on_escape, pad
 from .dbpanel import q_ident, q_val, _human_bytes, _parse_mysql_argv, AuthError, NULL
 
@@ -232,6 +232,29 @@ class MySQLEndpoint:
         _, rows = self.query(q, db=db)
         return rows  # [name, rows, bytes]
 
+    def exact_counts(self, db, names, chunk=50):
+        """Exact COUNT(*) per table, keyed by name. information_schema.TABLE_ROWS
+        is only a statistics estimate for InnoDB (often far off), so the table
+        list refines itself with these real counts. Batched (and chunked) into
+        one query per group to keep SSH round-trips down; a failed chunk is
+        skipped so the estimate simply stands for those tables."""
+        out = {}
+        for i in range(0, len(names), chunk):
+            batch = names[i:i + chunk]
+            sql = " UNION ALL ".join(
+                f"SELECT {q_val(n)} AS t, COUNT(*) AS c FROM {q_ident(n)}" for n in batch)
+            try:
+                _, rows = self.query(sql, db=db)
+            except Exception:
+                continue
+            for r in rows:
+                if len(r) >= 2:
+                    try:
+                        out[r[0]] = int(r[1])
+                    except (ValueError, TypeError):
+                        pass
+        return out
+
     def columns(self, db, table):
         """Column metadata for a table, in definition order — used to build the
         row detail form (widget per type, primary key, nullability)."""
@@ -293,6 +316,7 @@ class _DBPane(Gtk.Box):
         self.commander, self.endpoint, self.side = commander, endpoint, side
         self.level_db = None   # None = databases; else tables in this db
         self.items = []
+        self._load_seq = 0     # bumped per reload, so stale count patches drop
         self.sort_key = None    # None | "name" | "rows" | "size"
         self.sort_desc = False
 
@@ -342,13 +366,36 @@ class _DBPane(Gtk.Box):
         self.store.clear()
         if ep.available is not True:
             return
+        self._load_seq += 1
+        seq = self._load_seq
         def work():
             if self.level_db is None:
                 items = [(n, None, int(b or 0), "db") for n, b in ep.databases()]
-            else:
-                items = [(n, int(r or 0), int(b or 0), "table") for n, r, b in ep.tables(self.level_db)]
+                GLib.idle_add(self._fill, items, select, focus)
+                return
+            level = self.level_db
+            trows = ep.tables(level)
+            items = [(n, int(r or 0), int(b or 0), "table") for n, r, b in trows]
             GLib.idle_add(self._fill, items, select, focus)
+            # Phase 2: replace InnoDB's estimated TABLE_ROWS with real counts.
+            try:
+                counts = ep.exact_counts(level, [t[0] for t in trows])
+            except Exception:
+                counts = {}
+            if counts:
+                GLib.idle_add(self._apply_counts, seq, level, counts)
         self.commander._bg(work)
+
+    def _apply_counts(self, seq, level, counts):
+        """Patch exact row counts into the already-rendered list, in place, so
+        selection/scroll/sort are kept. Dropped if the pane has moved on."""
+        if seq != self._load_seq or self.level_db != level:
+            return
+        self.items = [(n, counts.get(n, r), b, k) for (n, r, b, k) in self.items]
+        for row in self.store:
+            c = counts.get(row[self.NAME])
+            if c is not None:
+                row[self.ROWS] = f"{c:,}"
 
     _SORT_KEYS = {
         "name": lambda it: it[0].lower(),
@@ -585,10 +632,13 @@ class DBCommander(Gtk.Window):
             except Exception: pass
         return False
 
-    def _ask_password(self, prompt):
+    def _ask_password(self, prompt, hint=None):
         d = Gtk.Dialog(title="Password", transient_for=self, flags=0)
         d.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "OK", Gtk.ResponseType.OK)
         box = d.get_content_area(); box.set_spacing(6); box.set_margin_start(12); box.set_margin_end(12)
+        if hint:
+            h = Gtk.Label(label=hint, xalign=0); h.set_line_wrap(True); h.set_max_width_chars(52)
+            h.get_style_context().add_class("dim-label"); box.add(h)
         box.add(Gtk.Label(label=prompt))
         e = Gtk.Entry(visibility=False, activates_default=True); box.add(e)
         d.set_default_response(Gtk.ResponseType.OK); d.show_all()
@@ -721,7 +771,8 @@ class DBCommander(Gtk.Window):
         self._bg(work)
 
     def _retry_ssh(self, pane, host, user, port, myuser, mypass, remember):
-        pw = self._ask_password(f"SSH password for {user or ''}@{host}:")
+        pw = self._ask_password(f"SSH password for {user or ''}@{host}:",
+                                hint=agent_auth_hint())
         if pw is not None:
             self._apply_ssh(pane, host, user, port, myuser, mypass, remember, sshpass=pw)
 
