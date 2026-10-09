@@ -65,6 +65,15 @@
     <color type="primary" scheme_preference="dark">#1c4e6b</color>
   </branding>
   <releases>
+    <release version="0.2.7" date="2026-10-09">
+      <description>
+        <ul>
+          <li>File manager shows files of 2 GB and larger again — row sizes are tracked as 64-bit, so a big file is no longer dropped from the listing</li>
+          <li>Copying a whole database now carries its stored routines and events as well (triggers already travelled)</li>
+          <li>When the server's SFTP subsystem isn't running, the file manager says so and points at sshd_config instead of a cryptic "EOF during negotiation"</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.2.6" date="2026-10-06">
       <description>
         <ul>
