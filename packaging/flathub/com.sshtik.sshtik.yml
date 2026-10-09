@@ -79,5 +79,5 @@ modules:
     sources:
       - type: git
         url: https://github.com/xsDevelopments/sshtik.git
-        tag: v0.2.6
-        commit: 04ed98ef8d8e2b0351cd61a535ebeb3a019dc9d4
+        tag: v0.2.7
+        commit: 5c4b227de3214db401fee38f54a0a78b11abe475
