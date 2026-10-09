@@ -15,7 +15,7 @@ from urllib.parse import unquote, urlparse
 
 import gi
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk, Gdk, GLib, Gio, Pango
+from gi.repository import Gtk, Gdk, GLib, Gio, Pango, GObject
 
 from .config import config, CACHE_DIR
 from .ui import stripe, close_on_escape
@@ -177,7 +177,9 @@ class _Pane(Gtk.Box):
         hdr.pack_start(rf, False, False, 0)
         self.pack_start(hdr, False, False, 0)
 
-        self.store = Gtk.ListStore(str, str, str, str, str, int, str, int)
+        # COL_BYTES is INT64: a plain `int` column is 32-bit (G_TYPE_INT) and a
+        # file >= 2 GiB overflows it, so the row is silently dropped from the list.
+        self.store = Gtk.ListStore(str, str, str, str, str, GObject.TYPE_INT64, str, int)
         self.view = Gtk.TreeView(model=self.store)
         # Name column: a mimetype icon, then the name (bold for directories).
         name_col = Gtk.TreeViewColumn("Name")

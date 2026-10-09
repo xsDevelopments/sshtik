@@ -190,8 +190,19 @@ class SSHConnection:
 
     def sftp(self):
         if self._sftp is None:
-            self._sftp = _LockingSFTP(self._client.open_sftp)
+            self._sftp = _LockingSFTP(self._open_sftp)
         return self._sftp
+
+    def _open_sftp(self):
+        """Open SFTP, turning paramiko's cryptic 'EOF during negotiation' (the
+        server's sftp subsystem never started) into an actionable message."""
+        try:
+            return self._client.open_sftp()
+        except Exception as e:
+            raise RuntimeError(
+                f"SFTP subsystem unavailable on {self.host}: {e}. Check "
+                "'Subsystem sftp' in the server's sshd_config (reconnect if you "
+                "changed it server-side).") from e
 
     def run(self, cmd, timeout=10, input=None):
         """Run a command on a fresh exec channel. Returns (rc, stdout, stderr).

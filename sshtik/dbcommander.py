@@ -189,8 +189,10 @@ class MySQLEndpoint:
         return (rows[0], rows[1:]) if rows else ([], [])
 
     def dump(self, db, table=None):
-        argv = (["mysqldump", "--single-transaction", "--quick", "--no-tablespaces"]
-                + self._conn_args() + [db])
+        opts = ["mysqldump", "--single-transaction", "--quick", "--no-tablespaces"]
+        if not table:                    # whole database: carry stored routines and
+            opts += ["--routines", "--events"]   # events too (triggers are dumped by default)
+        argv = opts + self._conn_args() + [db]
         if table:
             argv.append(table)
         rc, out, err = self._exec(argv)
