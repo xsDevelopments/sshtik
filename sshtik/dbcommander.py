@@ -7,9 +7,12 @@ exec channel (socket auth on that box, so no per-host TCP grants are needed).
 Either pane can be re-pointed at any host in your SSH config — including
 localhost, to reach this machine's own server. F5 copies the highlighted table
 or database to the other side (mysqldump | mysql); F6 moves it."""
+import os
 import re
 import shlex
+import tempfile
 import threading
+import time
 
 import paramiko
 
@@ -17,10 +20,25 @@ import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GLib, Pango, GObject
 
-from .config import config
+from .config import config, CACHE_DIR
 from .connection import SSHConnection, agent_auth_hint
-from .ui import stripe, close_on_escape, pad
+from .ui import stripe, close_on_escape, pad, TransferProgress
 from .dbpanel import q_ident, q_val, _human_bytes, _parse_mysql_argv, AuthError, NULL
+
+
+class _Cancelled(Exception):
+    """Raised out of a streaming copy when the user cancels."""
+
+
+def _drain_stderr(chan, buf, n=262144):
+    """Collect any stderr currently waiting on an exec channel. recv_stderr_ready()
+    stays True at EOF while recv_stderr() returns b'', so break on empty — else
+    this spins forever once the remote tool closes its stderr."""
+    while chan.recv_stderr_ready():
+        d = chan.recv_stderr(n)
+        if not d:
+            break
+        buf.append(d.decode(errors="replace"))
 
 
 # Row icons for the database list. Icon themes disagree on which names they
@@ -188,23 +206,25 @@ class MySQLEndpoint:
         rows = [line.split("\t") for line in lines]
         return (rows[0], rows[1:]) if rows else ([], [])
 
-    def dump(self, db, table=None):
+    def _mysql_env(self):
+        return ("MYSQL_PWD=" + shlex.quote(self.password) + " ") if self.password is not None else ""
+
+    def dump_command(self, db, table=None):
+        """Shell command that writes a mysqldump of a table/database to stdout.
+        A whole database carries its stored routines and events too (triggers
+        are dumped by default); a single table does not (they're DB-level)."""
         opts = ["mysqldump", "--single-transaction", "--quick", "--no-tablespaces"]
-        if not table:                    # whole database: carry stored routines and
-            opts += ["--routines", "--events"]   # events too (triggers are dumped by default)
+        if not table:
+            opts += ["--routines", "--events"]
         argv = opts + self._conn_args() + [db]
         if table:
             argv.append(table)
-        rc, out, err = self._exec(argv)
-        if rc != 0:
-            raise RuntimeError(err.strip() or f"mysqldump exited {rc}")
-        return out
+        return self._mysql_env() + " ".join(shlex.quote(a) for a in argv)
 
-    def load(self, sql_text, db):
+    def load_command(self, db):
+        """Shell command that loads SQL from stdin into `db`."""
         argv = ["mysql"] + self._conn_args() + [db]
-        rc, _, err = self._exec(argv, input=sql_text)
-        if rc != 0:
-            raise RuntimeError(err.strip() or f"mysql load exited {rc}")
+        return self._mysql_env() + " ".join(shlex.quote(a) for a in argv)
 
     # ---- schema --------------------------------------------------------
     def probe(self):
@@ -300,12 +320,6 @@ class MySQLEndpoint:
 
     def drop_table(self, db, table):
         self.query(f"DROP TABLE {q_ident(db)}.{q_ident(table)}")
-
-    def copy_to(self, dst, db, table=None, dst_db=None):
-        sql = self.dump(db, table)
-        target = dst_db or db
-        dst.query(f"CREATE DATABASE IF NOT EXISTS {q_ident(target)}")
-        dst.load(sql, target)
 
 
 # ---------------------------------------------------------------------------
@@ -1128,6 +1142,87 @@ class DBCommander(Gtk.Window):
     def copy_active(self, move=False):
         self._copy_between(self._active, move)
 
+    def _spool_copy(self, src_ep, dst_ep, db, table, dst_db, est_bytes, on_progress, cancel):
+        """Copy one table/database src -> dst by spooling mysqldump to a local
+        temp file and streaming it into mysql — chunked both ways so nothing is
+        held in RAM (a multi-GB dump used to be read whole into memory and crash
+        the app). Two phases, 'dump' then 'load'. Raises _Cancelled on cancel or
+        RuntimeError on a tool error; always removes the temp file."""
+        target = dst_db or db
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        fd, path = tempfile.mkstemp(prefix="sshtik-copy-", suffix=".sql", dir=CACHE_DIR)
+        os.close(fd)
+        CH = 262144
+        try:
+            # ---- phase 1: dump source -> temp file ----
+            chan = src_ep.conn.transport.open_session()
+            chan.exec_command(src_ep.dump_command(db, table))
+            err, done, last = [], 0, 0.0
+            with open(path, "wb") as f:
+                while True:
+                    if cancel.is_set():
+                        chan.close(); raise _Cancelled()
+                    _drain_stderr(chan, err, CH)
+                    data = chan.recv(CH)
+                    if not data:
+                        break
+                    f.write(data); done += len(data)
+                    now = time.monotonic()
+                    if now - last >= 0.1:
+                        last = now; on_progress("dump", done, est_bytes)
+            rc = chan.recv_exit_status()
+            _drain_stderr(chan, err, CH)
+            chan.close()
+            if rc != 0:
+                raise RuntimeError("mysqldump: " + ("".join(err).strip() or f"exit {rc}"))
+            total = os.path.getsize(path)
+            on_progress("dump", total, total)
+
+            # ---- phase 2: load temp file -> dest ----
+            dst_ep.query(f"CREATE DATABASE IF NOT EXISTS {q_ident(target)}")
+            chan = dst_ep.conn.transport.open_session()
+            chan.exec_command(dst_ep.load_command(target))
+            err2, stop = [], threading.Event()
+            def drain():    # keep mysql's output from filling its pipe and blocking our send
+                try:
+                    while not stop.is_set():
+                        pulled = False
+                        if chan.recv_stderr_ready():
+                            d = chan.recv_stderr(CH)      # empty => EOF, not new data
+                            if d: err2.append(d.decode(errors="replace")); pulled = True
+                        if chan.recv_ready():
+                            if chan.recv(CH): pulled = True
+                        if not pulled:
+                            time.sleep(0.02)
+                except Exception:
+                    pass
+            dt = threading.Thread(target=drain, daemon=True); dt.start()
+            sent, last = 0, 0.0
+            try:
+                with open(path, "rb") as f:
+                    while True:
+                        if cancel.is_set():
+                            chan.close(); raise _Cancelled()
+                        chunk = f.read(CH)
+                        if not chunk:
+                            break
+                        chan.sendall(chunk); sent += len(chunk)
+                        now = time.monotonic()
+                        if now - last >= 0.1:
+                            last = now; on_progress("load", sent, total)
+                chan.shutdown_write()
+                rc2 = chan.recv_exit_status()
+            finally:
+                stop.set(); dt.join(timeout=1.0)
+            _drain_stderr(chan, err2, CH)
+            chan.close()
+            if rc2 != 0:
+                raise RuntimeError("mysql load: " + ("".join(err2).strip() or f"exit {rc2}"))
+            on_progress("load", total, total)
+        finally:
+            try: os.unlink(path)
+            except OSError: pass
+
     def _copy_between(self, src, move=False):
         dst = self.right if src is self.left else self.left
         if dst.endpoint.available is not True:
@@ -1146,23 +1241,51 @@ class DBCommander(Gtk.Window):
         what = ", ".join(n for n, _ in items[:4]) + (" …" if len(items) > 4 else "")
         if not self.confirm(f"{verb} {len(items)} object(s) to {dest_desc}?\n{what}"):
             return
+        est = {it[0]: it[2] for it in src.items}   # bytes per object, for the progress estimate
+        n = len(items)
+        dlg = TransferProgress(self, f"{verb} to {dst.endpoint.label}")
+        dlg.show_all()
 
         def work():
-            done = 0
-            for name, kind in items:
-                GLib.idle_add(self._progress, done / len(items), f"{verb.lower()}ing {name}…")
-                if kind == "db":
-                    src.endpoint.copy_to(dst.endpoint, name)
-                    if move:
-                        src.endpoint.drop_database(name)
-                else:  # table -> the destination pane's current database
-                    src.endpoint.copy_to(dst.endpoint, db, name, dst_db=into)
-                    if move:
-                        src.endpoint.drop_table(db, name)
-                done += 1
-            GLib.idle_add(self._progress, 1.0, f"{verb}d {done} object(s)")
+            completed, cancelled = 0, False
+            try:
+                for idx, (name, kind) in enumerate(items, 1):
+                    if dlg.cancelled.is_set():
+                        cancelled = True; break
+                    state = {}
+                    def on_progress(phase, done, total, name=name, idx=idx, state=state):
+                        if state.get("phase") != phase:
+                            state["phase"] = phase
+                            GLib.idle_add(dlg.set_heading,
+                                          f"{idx}/{n}   {name}   —   {'dumping' if phase == 'dump' else 'loading'}")
+                            GLib.idle_add(dlg.reset_timer)
+                        GLib.idle_add(dlg.update, done, total)
+                    if kind == "db":
+                        self._spool_copy(src.endpoint, dst.endpoint, name, None, None,
+                                         est.get(name, 0), on_progress, dlg.cancelled)
+                        if move:
+                            src.endpoint.drop_database(name)
+                    else:
+                        self._spool_copy(src.endpoint, dst.endpoint, db, name, into,
+                                         est.get(name, 0), on_progress, dlg.cancelled)
+                        if move:
+                            src.endpoint.drop_table(db, name)
+                    completed += 1
+            except _Cancelled:
+                cancelled = True
+            except Exception as e:
+                GLib.idle_add(dlg.finish)
+                GLib.idle_add(self.status.set_text, str(e))
+                GLib.idle_add(dst.reload)
+                if move and completed:
+                    GLib.idle_add(src.reload)
+                return
+            GLib.idle_add(dlg.finish)
+            GLib.idle_add(self.status.set_text,
+                          f"Cancelled — {completed}/{n} object(s) copied" if cancelled
+                          else f"{verb}d {completed} object(s)")
             GLib.idle_add(dst.reload)
-            if move:
+            if move and completed:
                 GLib.idle_add(src.reload)
         self._bg(work)
 

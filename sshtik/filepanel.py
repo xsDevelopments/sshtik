@@ -18,7 +18,11 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GLib, Gio, Pango, GObject
 
 from .config import config, CACHE_DIR
-from .ui import stripe, close_on_escape
+from .ui import stripe, close_on_escape, TransferProgress
+
+
+class _Cancelled(Exception):
+    """Raised out of a transfer callback when the user cancels."""
 
 DND_TARGET = "application/x-sshtik-files"
 _TARGETS = [Gtk.TargetEntry.new(DND_TARGET, Gtk.TargetFlags.SAME_APP, 0),
@@ -674,56 +678,76 @@ class FilePanel(Gtk.Window):
         if not paths: return
         upload = src is self.local
         sftp = self.conn.sftp()
+        dlg = TransferProgress(self, ("Upload" if upload else "Download") + (" (move)" if move else ""))
+        dlg.show_all()
 
         def work():
-            # 1. build the job list (dirs to create, files with sizes)
-            jobs, total = [], 0
-            for p in paths:
-                base = os.path.basename(p.rstrip("/"))
-                if src.fs.isdir(p):
-                    for rel, size in src.fs.walk_files(p):
-                        d = os.path.join(base, rel) if rel else base
-                        jobs.append((os.path.join(p, rel) if rel else p, os.path.join(dst.cwd, d), size))
-                        total += size or 0
-                else:
-                    size = (os.path.getsize(p) if upload else sftp.stat(p).st_size) or 0
-                    jobs.append((p, os.path.join(dst.cwd, base), size)); total += size
-            # 2. run them
-            done_bytes, nfiles = 0, sum(1 for j in jobs if j[2] is not None)
-            count = 0
-            errors = []
-            for s, d, size in jobs:
-                if size is None:  # directory
-                    try: dst.fs.mkdir(d)
-                    except OSError: pass
-                    continue
-                count += 1
-                name = os.path.basename(s)
-                base_done = done_bytes
-                def cb(x, _t, name=name, base_done=base_done):
-                    frac = (base_done + x) / total if total else 1
-                    GLib.idle_add(self._progress, frac, f"{count}/{nfiles} {name}")
-                try:
-                    (sftp.put if upload else sftp.get)(s, d, callback=cb)
-                except Exception as e:
-                    errors.append((name, e))
-                done_bytes += size
-            if errors:
-                ok = nfiles - len(errors)
-                fname, err = errors[0]
-                more = f" (+{len(errors) - 1} more)" if len(errors) > 1 else ""
-                GLib.idle_add(self._progress, 0.0, "")
-                GLib.idle_add(self.status.set_text,
-                              f"{fname}: {err}{more} — {ok}/{nfiles} transferred")
-            else:
-                verb = "Moved" if move else "Copied"
-                GLib.idle_add(self._progress, 1.0, f"{verb} {nfiles} file(s), {_human(total)}")
-                if move:  # delete sources only after a fully clean copy
-                    for p in paths:
-                        try: src.fs.remove(p)
+            try:
+                # 1. build the job list (dirs to create, files with sizes)
+                jobs, total = [], 0
+                for p in paths:
+                    base = os.path.basename(p.rstrip("/"))
+                    if src.fs.isdir(p):
+                        for rel, size in src.fs.walk_files(p):
+                            d = os.path.join(base, rel) if rel else base
+                            jobs.append((os.path.join(p, rel) if rel else p, os.path.join(dst.cwd, d), size))
+                            total += size or 0
+                    else:
+                        size = (os.path.getsize(p) if upload else sftp.stat(p).st_size) or 0
+                        jobs.append((p, os.path.join(dst.cwd, base), size)); total += size
+                # 2. run them
+                done_bytes, nfiles = 0, sum(1 for j in jobs if j[2] is not None)
+                count, completed, errors, cancelled = 0, 0, [], False
+                last = [0.0]                          # throttle UI updates to ~10/s
+                for s, d, size in jobs:
+                    if dlg.cancelled.is_set():
+                        cancelled = True; break
+                    if size is None:                  # directory: just create it
+                        try: dst.fs.mkdir(d)
+                        except OSError: pass
+                        continue
+                    count += 1
+                    name = os.path.basename(s)
+                    base_done = done_bytes
+                    GLib.idle_add(dlg.set_heading, f"{count}/{nfiles}   {name}")
+                    def cb(x, _t, base_done=base_done):
+                        if dlg.cancelled.is_set():
+                            raise _Cancelled()
+                        now = time.monotonic()
+                        if now - last[0] >= 0.1 or base_done + x >= total:
+                            last[0] = now
+                            GLib.idle_add(dlg.update, base_done + x, total)
+                    try:
+                        (sftp.put if upload else sftp.get)(s, d, callback=cb)
+                        completed += 1
+                    except _Cancelled:
+                        cancelled = True
+                        try: dst.fs.remove(d)     # drop the half-written destination file
                         except Exception: pass
-                    GLib.idle_add(src.refresh)
-            GLib.idle_add(dst.refresh)
+                        break
+                    except Exception as e:
+                        errors.append((name, e))
+                    done_bytes += size
+                GLib.idle_add(dlg.finish)
+                if cancelled:
+                    GLib.idle_add(self.status.set_text, f"Cancelled — {completed}/{nfiles} file(s) completed")
+                elif errors:
+                    ok = nfiles - len(errors)
+                    fname, err = errors[0]
+                    more = f" (+{len(errors) - 1} more)" if len(errors) > 1 else ""
+                    GLib.idle_add(self.status.set_text, f"{fname}: {err}{more} — {ok}/{nfiles} transferred")
+                else:
+                    verb = "Moved" if move else "Copied"
+                    GLib.idle_add(self.status.set_text, f"{verb} {nfiles} file(s), {_human(total)}")
+                    if move:                          # delete sources only after a fully clean copy
+                        for p in paths:
+                            try: src.fs.remove(p)
+                            except Exception: pass
+                        GLib.idle_add(src.refresh)
+                GLib.idle_add(dst.refresh)
+            except Exception as e:
+                GLib.idle_add(dlg.finish)
+                GLib.idle_add(self.status.set_text, f"Error: {e}")
         self.bg(work)
 
     def _progress(self, frac, text):
