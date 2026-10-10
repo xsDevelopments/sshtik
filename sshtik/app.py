@@ -125,18 +125,21 @@ class MainWindow(Gtk.Window):
         self.connect("destroy", Gtk.main_quit)
 
         tb = Gtk.Toolbar()
-        for label, icon, cb in (("Reference (F1)", "help-contents", self.on_manhelp),
-                                ("History (F2)", "document-open-recent", self.on_history),
-                                ("Connect (F4)", "network-server", self.on_connect),
-                                ("Files (F5)", "folder", self.on_files),
-                                ("Database (F6)", "x-office-spreadsheet", self.on_db)):
-            b = Gtk.ToolButton(icon_name=icon, label=label)
-            b.set_is_important(True)
-            b.connect("clicked", cb)
-            tb.insert(b, -1)
+        def add_buttons(items):
+            for label, icon, cb in items:
+                b = Gtk.ToolButton(icon_name=icon, label=label)
+                b.set_is_important(True)
+                b.connect("clicked", cb)
+                tb.insert(b, -1)
+        # session actions on the left; the reference/history helpers on the right
+        add_buttons((("Connect (F4)", "network-server", self.on_connect),
+                     ("Files (F5)", "folder", self.on_files),
+                     ("Database (F6)", "x-office-spreadsheet", self.on_db)))
         spacer = Gtk.SeparatorToolItem()
         spacer.set_draw(False); spacer.set_expand(True)
         tb.insert(spacer, -1)
+        add_buttons((("Reference (F1)", "help-contents", self.on_manhelp),
+                     ("History (F2)", "document-open-recent", self.on_history)))
         tb.insert(self._about_item(), -1)
 
         self.notebook = Gtk.Notebook()
