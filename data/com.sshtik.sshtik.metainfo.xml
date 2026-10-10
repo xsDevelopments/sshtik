@@ -65,6 +65,15 @@
     <color type="primary" scheme_preference="dark">#1c4e6b</color>
   </branding>
   <releases>
+    <release version="0.2.8" date="2026-10-10">
+      <description>
+        <ul>
+          <li>File and database transfers show a progress window with a percentage bar, transfer speed and estimated time remaining</li>
+          <li>A transfer can be cancelled — click Cancel, or press Escape to arm it and Enter to confirm</li>
+          <li>Database copies now stream through a temporary file instead of being held in memory, so copying a multi-gigabyte table no longer freezes or crashes the app</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.2.7" date="2026-10-09">
       <description>
         <ul>
