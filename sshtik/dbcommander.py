@@ -128,6 +128,11 @@ def _login_key(ep):
     return f"ssh:{ep.conn.host}"
 
 
+def _saved_login_for(host):
+    """The remembered (disk or session) MySQL login for an SSH host, or {}."""
+    return config.get("db_logins", {}).get(f"ssh:{host}") or _SESSION_LOGINS.get(f"ssh:{host}") or {}
+
+
 def _apply_saved_login(ep):
     """Prefill an endpoint from a remembered (disk) or session-cached login."""
     key = _login_key(ep)
@@ -705,6 +710,18 @@ class DBCommander(Gtk.Window):
             fields[k] = e; grid.attach(e, 1, i, 1, 1)
         # Start on the pane's current host so the default checkbox reads true.
         fields["host"].set_text(ep.conn.host)
+
+        def fill_mysql_login(host):
+            """Prefill the optional MySQL user/password so reopening the dialog
+            shows what the connection is using — making Connect idempotent."""
+            if host == ep.conn.host and (ep.opts.get("user") is not None or ep.password is not None):
+                fields["myuser"].set_text(ep.opts.get("user") or "")
+                fields["mypass"].set_text(ep.password or "")
+            else:
+                data = _saved_login_for(host)
+                fields["myuser"].set_text(data.get("user") or "")
+                fields["mypass"].set_text(data.get("password") or "")
+        fill_mysql_login(ep.conn.host)
         default_chk = None
         if pane.side == "left":
             default_chk = Gtk.CheckButton(label="Default left pane")
@@ -720,6 +737,7 @@ class DBCommander(Gtk.Window):
             if it:
                 fields["host"].set_text(m[it][1]); fields["user"].set_text(m[it][2])
                 fields["port"].set_text("" if m[it][3] == 22 else str(m[it][3]))
+                fill_mysql_login(m[it][1])      # remembered MySQL login for this host
                 if default_chk is not None:     # only stays ticked on the pinned host
                     default_chk.set_active(m[it][1] == dflt_host)
         hv.get_selection().connect("changed", on_sel)

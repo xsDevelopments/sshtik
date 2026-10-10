@@ -61,6 +61,14 @@ class SSHTerminal(Vte.Terminal):
             if data:
                 self.chan.send(data)
 
+    def feed_command(self, text):
+        """Type a command onto the shell's prompt (no trailing newline, so the
+        user reviews and runs it). Used by the F1/F2 helpers."""
+        try:
+            self.chan.send(text if isinstance(text, bytes) else text.encode())
+        except Exception:
+            pass
+
     # ---- copy / paste / zoom ---------------------------------------------
     def _on_key(self, w, ev):
         ctrl = ev.state & Gdk.ModifierType.CONTROL_MASK

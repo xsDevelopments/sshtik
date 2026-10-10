@@ -14,6 +14,7 @@ from .terminal import SSHTerminal
 from .filepanel import FilePanel
 from .dbpanel import DBPanel
 from .dbcommander import DBCommander
+from .helpers import HistoryHelper, ManHelper
 from .ui import install_css
 from .about import show_about, build_summary, app_version, toolbar_icon
 
@@ -124,7 +125,9 @@ class MainWindow(Gtk.Window):
         self.connect("destroy", Gtk.main_quit)
 
         tb = Gtk.Toolbar()
-        for label, icon, cb in (("Connect (F4)", "network-server", self.on_connect),
+        for label, icon, cb in (("Reference (F1)", "help-contents", self.on_manhelp),
+                                ("History (F2)", "document-open-recent", self.on_history),
+                                ("Connect (F4)", "network-server", self.on_connect),
                                 ("Files (F5)", "folder", self.on_files),
                                 ("Database (F6)", "x-office-spreadsheet", self.on_db)):
             b = Gtk.ToolButton(icon_name=icon, label=label)
@@ -173,6 +176,8 @@ class MainWindow(Gtk.Window):
     def on_key(self, w, ev):
         ctrl = ev.state & Gdk.ModifierType.CONTROL_MASK
         shift = ev.state & Gdk.ModifierType.SHIFT_MASK
+        if ev.keyval == Gdk.KEY_F1: self.on_manhelp(); return True
+        if ev.keyval == Gdk.KEY_F2: self.on_history(); return True
         if ev.keyval == Gdk.KEY_F4: self.on_connect(); return True
         if ev.keyval == Gdk.KEY_F5: self.on_files(); return True
         if ev.keyval == Gdk.KEY_F6: self.on_db(); return True
@@ -298,6 +303,15 @@ class MainWindow(Gtk.Window):
         if not t: return
         conn = self.active_connection(t)
         if conn: DBCommander(conn, parent=self).show_all()
+
+    def on_manhelp(self, *_):
+        ManHelper(self, self.current()).show_all()   # works without a connection
+
+    def on_history(self, *_):
+        t = self.current()
+        if not t: return
+        conn = self.active_connection(t)
+        if conn: HistoryHelper(self, conn, t).show_all()
 
 
 def main():
