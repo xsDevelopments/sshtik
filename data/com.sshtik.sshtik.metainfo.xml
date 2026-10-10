@@ -65,12 +65,14 @@
     <color type="primary" scheme_preference="dark">#1c4e6b</color>
   </branding>
   <releases>
-    <release version="0.2.8" date="2026-10-10">
+    <release version="0.2.9" date="2026-10-10">
       <description>
         <ul>
-          <li>File and database transfers show a progress window with a percentage bar, transfer speed and estimated time remaining</li>
-          <li>A transfer can be cancelled — click Cancel, or press Escape to arm it and Enter to confirm</li>
+          <li>File and database transfers show a progress window with a percentage bar, transfer speed and estimated time remaining, and can be cancelled — click Cancel, or press Escape to arm it and Enter to confirm</li>
           <li>Database copies now stream through a temporary file instead of being held in memory, so copying a multi-gigabyte table no longer freezes or crashes the app</li>
+          <li>The database connect dialog remembers the optional MySQL user and password, so reopening it shows them filled in</li>
+          <li>F2 opens a searchable history of the remote shell's recent commands — pick one to drop it on the prompt</li>
+          <li>F1 opens a quick reference of common Linux commands with example syntax, searchable by name, flag or keyword</li>
         </ul>
       </description>
     </release>
