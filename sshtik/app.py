@@ -46,13 +46,22 @@ class ConnectDialog(Gtk.Dialog):
         self.set_default_size(620, 360)
         self.result = None
 
+        self.filter_text = ""
         self.store = Gtk.ListStore(str, str, str, int, str)  # name, host, user, port, source
-        self._reload()
         self.view = Gtk.TreeView(model=self.store)
+        self.view.set_enable_search(False)   # we provide our own substring filter below
         self.view.append_column(Gtk.TreeViewColumn("Saved hosts", Gtk.CellRendererText(), text=0))
         self.view.get_selection().connect("changed", self._selected)
         self.view.connect("row-activated", lambda *a: self.response(Gtk.ResponseType.OK))
-        sw = Gtk.ScrolledWindow(); sw.add(self.view); sw.set_size_request(240, -1)
+        self.search = Gtk.Entry()
+        self.search.set_placeholder_text("Filter hosts…  (↑/↓ to pick, Enter to connect)")
+        self.search.connect("changed", lambda e: (setattr(self, "filter_text", e.get_text()), self._reload()))
+        self.search.connect("key-press-event", self._on_search_key)
+        sw = Gtk.ScrolledWindow(); sw.add(self.view)
+        left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        left.set_size_request(240, -1)
+        left.pack_start(self.search, False, False, 0)
+        left.pack_start(sw, True, True, 0)
 
         grid = Gtk.Grid(row_spacing=6, column_spacing=6, margin=12)
         self.entries = {}
@@ -62,7 +71,6 @@ class ConnectDialog(Gtk.Dialog):
             e = Gtk.Entry(activates_default=True)
             if k == "port": e.set_placeholder_text("22")
             self.entries[k] = e; grid.attach(e, 1, i, 1, 1)
-        self.entries["host"].grab_focus()
         btns = Gtk.Box(spacing=6)
         save = Gtk.Button(label="Save"); save.connect("clicked", self._save)
         rm = Gtk.Button(label="Remove"); rm.connect("clicked", self._remove)
@@ -71,18 +79,40 @@ class ConnectDialog(Gtk.Dialog):
         grid.attach(Gtk.Label(label="Entries from ~/.ssh/config appear below your saved hosts.",
                               xalign=0, wrap=True), 0, 5, 2, 1)
 
+        self._reload()                  # after self.entries exists (auto-select fills the form)
         box = Gtk.Box(spacing=8)
-        box.pack_start(sw, False, False, 0)
+        box.pack_start(left, False, False, 0)
         box.pack_start(grid, True, True, 0)
         self.get_content_area().add(box)
         self.show_all()
+        self.search.grab_focus()        # start typing to filter straight away
 
     def _reload(self):
         self.store.clear()
+        q = self.filter_text.strip().lower()
+        def ok(*fields):                # match the host name, hostname or user
+            return not q or any(q in (f or "").lower() for f in fields)
         for h in sorted(config["hosts"], key=lambda h: (h.get("name") or h["host"]).lower()):
-            self.store.append([h.get("name") or h["host"], h["host"], h.get("user", ""), int(h.get("port") or 22), "saved"])
+            name = h.get("name") or h["host"]
+            if ok(name, h["host"], h.get("user", "")):
+                self.store.append([name, h["host"], h.get("user", ""), int(h.get("port") or 22), "saved"])
         for h in ssh_config_hosts():
-            self.store.append([h["name"] + "  (ssh config)", h["host"], h["user"], h["port"], "ssh_config"])
+            if ok(h["name"], h["host"], h["user"]):
+                self.store.append([h["name"] + "  (ssh config)", h["host"], h["user"], h["port"], "ssh_config"])
+        if len(self.store):             # keep a match selected so Enter connects to it
+            self.view.get_selection().select_path(Gtk.TreePath(0))
+
+    def _on_search_key(self, _w, ev):
+        if ev.keyval in (Gdk.KEY_Down, Gdk.KEY_Up) and len(self.store):
+            sel = self.view.get_selection()
+            _, rows = sel.get_selected_rows()
+            cur = rows[0].get_indices()[0] if rows else -1
+            p = Gtk.TreePath(max(0, min(len(self.store) - 1, cur + (1 if ev.keyval == Gdk.KEY_Down else -1))))
+            sel.unselect_all(); sel.select_path(p); self.view.scroll_to_cell(p, None, False, 0, 0)
+            return True
+        if ev.keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter):
+            self.response(Gtk.ResponseType.OK); return True
+        return False
 
     def _selected(self, sel):
         model, it = sel.get_selected()
