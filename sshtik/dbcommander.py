@@ -689,14 +689,50 @@ class DBCommander(Gtk.Window):
         store = Gtk.ListStore(str, str, str, int)
         def _label(name, host):
             return name + ("  (default)" if host == dflt_host else "")
+        all_rows = []   # (store row, lowercase text to match the filter against)
         for h in sorted(config["hosts"], key=lambda h: (h.get("name") or h["host"]).lower()):
-            store.append([_label(h.get("name") or h["host"], h["host"]), h["host"], h.get("user", ""), int(h.get("port") or 22)])
+            name = h.get("name") or h["host"]
+            all_rows.append(([_label(name, h["host"]), h["host"], h.get("user", ""), int(h.get("port") or 22)],
+                             f"{name} {h['host']} {h.get('user', '')}".lower()))
         for h in ssh_config_hosts():
-            store.append([_label(h["name"] + "  (ssh config)", h["host"]), h["host"], h["user"], h["port"]])
+            all_rows.append(([_label(h["name"] + "  (ssh config)", h["host"]), h["host"], h["user"], h["port"]],
+                             f"{h['name']} {h['host']} {h['user']}".lower()))
         hv = Gtk.TreeView(model=store)
+        hv.set_enable_search(False)   # our own substring filter, not prefix typeahead
         hv.append_column(Gtk.TreeViewColumn("SSH hosts", Gtk.CellRendererText(), text=0))
-        hsw = Gtk.ScrolledWindow(); hsw.add(hv); hsw.set_size_request(220, 210)
-        body.pack_start(hsw, False, False, 0)
+        hsw = Gtk.ScrolledWindow(); hsw.add(hv)
+        hsearch = Gtk.Entry(); hsearch.set_placeholder_text("Filter hosts…")
+
+        def repopulate(q=""):
+            q = q.strip().lower()
+            store.clear()
+            for row, match in all_rows:
+                if not q or q in match:
+                    store.append(row)
+            idx = next((i for i, r in enumerate(store) if r[1] == ep.conn.host), None)
+            if idx is None and q and len(store):   # filtering: fall to the top match
+                idx = 0
+            if idx is not None:
+                hv.get_selection().select_path(Gtk.TreePath(idx))
+        hsearch.connect("changed", lambda e: repopulate(e.get_text()))
+
+        def on_hsearch_key(_w, ev):
+            if ev.keyval in (Gdk.KEY_Down, Gdk.KEY_Up) and len(store):
+                s = hv.get_selection(); _, rows = s.get_selected_rows()
+                cur = rows[0].get_indices()[0] if rows else -1
+                p = Gtk.TreePath(max(0, min(len(store) - 1, cur + (1 if ev.keyval == Gdk.KEY_Down else -1))))
+                s.unselect_all(); s.select_path(p); hv.scroll_to_cell(p, None, False, 0, 0)
+                return True
+            if ev.keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter):
+                d.response(Gtk.ResponseType.OK); return True
+            return False
+        hsearch.connect("key-press-event", on_hsearch_key)
+
+        hleft = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        hleft.set_size_request(230, 240)
+        hleft.pack_start(hsearch, False, False, 0)
+        hleft.pack_start(hsw, True, True, 0)
+        body.pack_start(hleft, False, False, 0)
 
         grid = Gtk.Grid(row_spacing=6, column_spacing=6)
         fields = {}
@@ -741,9 +777,7 @@ class DBCommander(Gtk.Window):
                 if default_chk is not None:     # only stays ticked on the pinned host
                     default_chk.set_active(m[it][1] == dflt_host)
         hv.get_selection().connect("changed", on_sel)
-        for i, r in enumerate(store):       # pre-select the current host's row if listed
-            if r[1] == ep.conn.host:
-                hv.get_selection().select_path(Gtk.TreePath(i)); break
+        repopulate()        # fill the list + select the current host (fires on_sel)
 
         hint = Gtk.Label(xalign=0, wrap=True); hint.get_style_context().add_class("dim-label")
         hint.set_text("Opens a hidden SSH session and runs mysql on that host (socket auth) — "
