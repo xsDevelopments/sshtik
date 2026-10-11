@@ -65,6 +65,14 @@
     <color type="primary" scheme_preference="dark">#1c4e6b</color>
   </branding>
   <releases>
+    <release version="0.2.10" date="2026-10-11">
+      <description>
+        <ul>
+          <li>Type in the Connect dialog to filter your saved hosts by substring — match on the host name, address or user, then Enter connects to the top match</li>
+          <li>The Reference and History buttons moved to the right end of the toolbar</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.2.9" date="2026-10-10">
       <description>
         <ul>
