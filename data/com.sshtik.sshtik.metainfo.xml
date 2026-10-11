@@ -65,6 +65,13 @@
     <color type="primary" scheme_preference="dark">#1c4e6b</color>
   </branding>
   <releases>
+    <release version="0.2.11" date="2026-10-11">
+      <description>
+        <ul>
+          <li>The database connection dialog (F6) now has the same type-to-filter host list as the main Connect dialog</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.2.10" date="2026-10-11">
       <description>
         <ul>
