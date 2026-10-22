@@ -17,6 +17,11 @@ bumping versions with `flatpak-pip-generator paramiko` (flatpak-builder-tools).
 
     packaging/make-bundle.sh        # -> dist/sshtik-<version>-x86_64.flatpak
 
+Works over SSH too: the builder needs a session D-Bus to find the installed
+GNOME SDK, and an SSH login without a systemd user session (MX Linux) has none,
+so the script starts a private one with `dbus-run-session` (package `dbus-bin`).
+Without it the build fails with "Unable to find sdk org.gnome.Sdk".
+
 Attach the file to the GitHub release. Users install it with
 `flatpak install sshtik-<version>-x86_64.flatpak` (the GNOME runtime is fetched
 from Flathub automatically) or by opening it in GNOME Software / Discover.
