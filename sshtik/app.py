@@ -209,11 +209,14 @@ class MainWindow(Gtk.Window):
     def on_key(self, w, ev):
         ctrl = ev.state & Gdk.ModifierType.CONTROL_MASK
         shift = ev.state & Gdk.ModifierType.SHIFT_MASK
-        if ev.keyval == Gdk.KEY_F1: self.on_manhelp(); return True
-        if ev.keyval == Gdk.KEY_F2: self.on_history(); return True
-        if ev.keyval == Gdk.KEY_F4: self.on_connect(); return True
-        if ev.keyval == Gdk.KEY_F5: self.on_files(); return True
-        if ev.keyval == Gdk.KEY_F6: self.on_db(); return True
+        # Plain F-keys only: Shift/Ctrl/Alt+F-key goes to the terminal, so
+        # programs in it (tmux, sshtac, mc) can use them.
+        plain = not (ctrl or shift or ev.state & Gdk.ModifierType.MOD1_MASK)
+        if plain and ev.keyval == Gdk.KEY_F1: self.on_manhelp(); return True
+        if plain and ev.keyval == Gdk.KEY_F2: self.on_history(); return True
+        if plain and ev.keyval == Gdk.KEY_F4: self.on_connect(); return True
+        if plain and ev.keyval == Gdk.KEY_F5: self.on_files(); return True
+        if plain and ev.keyval == Gdk.KEY_F6: self.on_db(); return True
         if ctrl and shift and ev.keyval in (Gdk.KEY_T, Gdk.KEY_t): self.on_connect(); return True
         if ctrl and shift and ev.keyval in (Gdk.KEY_W, Gdk.KEY_w): self.close_tab(); return True
         if ctrl and ev.keyval == Gdk.KEY_Page_Down: self.notebook.next_page(); return True

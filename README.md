@@ -44,11 +44,17 @@ for a password once if the first hop's key isn't authorised there.
 | Main | Ctrl+Shift+T / W | New connection / close tab |
 | Main | Ctrl+PgUp / PgDn | Switch tab |
 | Terminal | Ctrl+Shift+C / V | Copy / paste (also right-click) |
+| Terminal | Shift/Ctrl/Alt + any F-key | Passed to the terminal (sshTIK only takes plain F1, F2, F4, F5, F6) |
 | Terminal | Ctrl + / − / 0 | Font size |
 | Files | Enter / Backspace | Open / parent dir |
 | Files | Del / F2 | Delete / rename (right-click for more) |
 | Files | double-click remote file | Edit locally; every save uploads |
 | Database | Ctrl+Enter | Run query |
+
+**Clipboard from the remote side (OSC 52):** programs on the server, such as tmux, vim or
+sshtac, can put text on your clipboard with the OSC 52 escape sequence, which the VTE terminal
+widget doesn't handle on its own. It is write-only: nothing on the server can read your
+clipboard. Turn it off with `"osc52_clipboard": false` in `~/.config/sshtik/config.json`.
 
 ## Database panel
 - Click a database → it becomes the default `USE` for the editor.

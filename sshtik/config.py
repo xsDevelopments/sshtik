@@ -15,6 +15,7 @@ _DEFAULTS = {
     "local_dir": {},        # {host: last local dir}
     "db_logins": {},        # {endpoint-key: {user,host,port,password}} — opt-in, plain text
     "db_default_host": {},  # {"host","user","port"} — left DB pane auto-connects here on open
+    "osc52_clipboard": True,  # remote programs may set (never read) the clipboard via OSC 52
 }
 
 

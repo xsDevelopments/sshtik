@@ -8,6 +8,7 @@ gi.require_version("Gtk", "3.0")
 gi.require_version("Vte", "2.91")
 from gi.repository import Gtk, Gdk, Vte, GLib
 
+from . import osc52
 from .config import config
 from .ui import TERMINAL_MARGIN
 
@@ -44,11 +45,15 @@ class SSHTerminal(Vte.Terminal):
 
     # remote -> screen
     def _pump_remote_to_pty(self):
+        scanner = osc52.Scanner() if config.get("osc52_clipboard", True) else None
         while True:
             data = self.chan.recv(65536)
             if not data:
                 GLib.idle_add(self.feed, b"\r\n[connection closed]\r\n")
                 return
+            if scanner:
+                for target, text in scanner.feed(data):
+                    GLib.idle_add(_set_clipboard, target, text)
             os.write(self._slave, data)
 
     # keyboard -> remote
@@ -109,3 +114,11 @@ class SSHTerminal(Vte.Terminal):
                 self.chan.resize_pty(width=cols, height=rows)
             except Exception:
                 pass
+
+
+def _set_clipboard(target, text):
+    """OSC 52 from the remote side (tmux, vim, sshtac): see osc52.py."""
+    sel = Gdk.SELECTION_PRIMARY if target == "primary" else Gdk.SELECTION_CLIPBOARD
+    Gtk.Clipboard.get(sel).set_text(text, -1)
+    return False
+
