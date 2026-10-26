@@ -9,7 +9,8 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk
 
 from .config import config
-from .connection import SSHConnection, agent_auth_hint
+from .connection import (SSHConnection, agent_auth_hint, close_all, open_jumps,
+                         resolve_ssh_config)
 from .terminal import SSHTerminal
 from .filepanel import FilePanel
 from .dbpanel import DBPanel
@@ -249,18 +250,30 @@ class MainWindow(Gtk.Window):
     def _connect(self, host, user, port, via=None, resolved=None):
         """Open an SSHConnection, prompting for a password on auth failure.
         Returns None if the user cancels or the connection fails."""
+        jumps = []
+        if via is None and resolved is None:
+            # ProxyJump: open each hop here so every hop gets its own password
+            # prompt and a retry on the target doesn't reconnect the chain
+            hops = resolve_ssh_config(host, user, port)["proxyjump"]
+            if hops:
+                jumps = open_jumps(hops, lambda h, u, p, v: self._connect(h, u, p, via=v))
+                if jumps is None:
+                    return None
+                via = jumps[-1]
         password = None
         where = f"{(resolved or {}).get('user') or user or ''}@{host}" + (f" (via {via.host})" if via else "")
         while True:
             try:
                 return SSHConnection(host, user=user, port=port, password=password,
-                                     via=via, resolved=resolved)
+                                     via=via, resolved=resolved, jumps=jumps)
             except paramiko.AuthenticationException:
                 password = self._ask_password(f"Password for {where}:",
                                               hint=agent_auth_hint())
                 if password is None:
+                    close_all(jumps)
                     return None
             except Exception as e:
+                close_all(jumps)
                 md = Gtk.MessageDialog(transient_for=self, message_type=Gtk.MessageType.ERROR,
                                        buttons=Gtk.ButtonsType.OK, text=f"{where}: {e}")
                 md.run(); md.destroy(); return None

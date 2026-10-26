@@ -134,48 +134,122 @@ class _LockingSFTP:
                     self._sftp = None
 
 
+def parse_proxyjump(spec):
+    """ProxyJump / `ssh -J` value -> [(host, user, port)], first hop first.
+    Each entry is [user@]host[:port] or ssh://[user@]host[:port]; "none" -> []."""
+    if not spec or spec.strip().lower() == "none":
+        return []
+    hops = []
+    for entry in spec.split(","):
+        entry = entry.strip()
+        if entry.startswith("ssh://"):
+            entry = entry[len("ssh://"):].rstrip("/")
+        user, _, hostport = entry.rpartition("@")
+        if hostport.startswith("["):            # [v6addr]:port
+            host, _, rest = hostport[1:].partition("]")
+            port = rest[1:] if rest.startswith(":") else None
+        elif hostport.count(":") == 1:
+            host, port = hostport.split(":")
+        else:
+            host, port = hostport, None
+        if host:
+            hops.append((host, user or None, int(port) if port else None))
+    return hops
+
+
 def resolve_ssh_config(host, user=None, port=None):
-    """Apply ~/.ssh/config (HostName/User/Port/IdentityFile) to explicit args.
-    Explicit args win over the config file."""
+    """Apply ~/.ssh/config (HostName/User/Port/IdentityFile/ProxyJump/
+    ProxyCommand) to explicit args. Explicit args win over the config file."""
     cfg = paramiko.SSHConfig()
     path = os.path.expanduser("~/.ssh/config")
     if os.path.exists(path):
         with open(path) as f:
             cfg.parse(f)
     h = cfg.lookup(host)
+    jumps = parse_proxyjump(h.get("proxyjump"))
+    if jumps and jumps[0][0] in (host, h.get("hostname")):
+        jumps = []  # e.g. `Host *  ProxyJump bastion` also matching the bastion itself
     return {
         "hostname": h.get("hostname", host),
         "user": user or h.get("user"),
         "port": int(port or h.get("port", 22)),
         "key_filename": h.get("identityfile"),
+        "proxyjump": jumps,
+        "proxycommand": None if jumps else h.get("proxycommand"),
     }
+
+
+def open_jumps(hops, connect):
+    """Connect a ProxyJump chain: `connect(host, user, port, via)` opens each
+    hop through the previous one. Returns the list of connections (last one is
+    the `via` for the target), or None if `connect` returned None (cancelled);
+    hops already opened are closed on cancel or error."""
+    chain = []
+    try:
+        for host, user, port in hops:
+            conn = connect(host, user, port, chain[-1] if chain else None)
+            if conn is None:
+                close_all(chain)
+                return None
+            chain.append(conn)
+    except Exception:
+        close_all(chain)
+        raise
+    return chain
+
+
+def close_all(conns):
+    for c in reversed(conns):
+        try:
+            c.close()
+        except Exception:
+            pass
 
 
 class SSHConnection:
     def __init__(self, host, user=None, port=None, password=None, key_filename=None,
-                 timeout=15, via=None, resolved=None):
+                 timeout=15, via=None, resolved=None, jumps=None):
         """`via`: an existing SSHConnection to tunnel through (like ProxyJump).
         `resolved`: {"hostname","user","port"} already resolved on the via host
-        (so the via host's ~/.ssh/config applies, not ours)."""
+        (so the via host's ~/.ssh/config applies, not ours).
+        `jumps`: ProxyJump hops (ending in `via`) this connection owns and
+        closes with itself. With no `via`, ProxyJump/ProxyCommand from
+        ~/.ssh/config are honoured here."""
         ensure_ssh_agent()  # so agent keys work even when launched from a menu
         r = resolved or resolve_ssh_config(host, user, port)
         self.host = host
         self.hostname = r["hostname"]
         self.user = r["user"]
         self.port = int(r["port"] or 22)
-        self.via = via
+        self.jumps = list(jumps or [])
+        opened = []  # hops opened here, closed again if this connect fails
         sock = None
-        if via is not None:
-            sock = via.transport.open_channel(
-                "direct-tcpip", (self.hostname, self.port), ("127.0.0.1", 0), timeout=timeout)
-        self._client = paramiko.SSHClient()
-        self._client.load_system_host_keys()
-        self._client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        self._client.connect(
-            self.hostname, port=self.port, username=self.user, password=password,
-            key_filename=key_filename or r.get("key_filename"),
-            allow_agent=True, look_for_keys=True, timeout=timeout, sock=sock,
-        )
+        if via is None and resolved is None:
+            if r.get("proxyjump"):
+                opened = open_jumps(r["proxyjump"], lambda h, u, p, v: SSHConnection(
+                    h, user=u, port=p, timeout=timeout, via=v))
+                self.jumps += opened
+                via = opened[-1]
+            elif r.get("proxycommand"):
+                sock = paramiko.ProxyCommand(r["proxycommand"])
+        self.via = via
+        try:
+            if via is not None:
+                sock = via.transport.open_channel(
+                    "direct-tcpip", (self.hostname, self.port), ("127.0.0.1", 0), timeout=timeout)
+            self._client = paramiko.SSHClient()
+            self._client.load_system_host_keys()
+            self._client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            self._client.connect(
+                self.hostname, port=self.port, username=self.user, password=password,
+                key_filename=key_filename or r.get("key_filename"),
+                allow_agent=True, look_for_keys=True, timeout=timeout, sock=sock,
+            )
+        except Exception:
+            if sock is not None:
+                sock.close()
+            close_all(opened)
+            raise
         self.transport = self._client.get_transport()
         self.transport.set_keepalive(30)
         self._sftp = None
@@ -339,3 +413,4 @@ who | awk -v u="$(id -un)" '$1==u {from=$NF; gsub(/[()]/,"",from); print $2, $3"
         if self._sftp:
             self._sftp.close()
         self._client.close()
+        close_all(self.jumps)
