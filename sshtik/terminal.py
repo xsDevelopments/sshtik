@@ -79,7 +79,7 @@ class SSHTerminal(Vte.Terminal):
         ctrl = ev.state & Gdk.ModifierType.CONTROL_MASK
         shift = ev.state & Gdk.ModifierType.SHIFT_MASK
         if ctrl and shift and ev.keyval in (Gdk.KEY_C, Gdk.KEY_c):
-            self.copy_clipboard_format(Vte.Format.TEXT); return True
+            self._copy(); return True
         if ctrl and shift and ev.keyval in (Gdk.KEY_V, Gdk.KEY_v):
             self.paste_clipboard(); return True
         if ctrl and ev.keyval in (Gdk.KEY_plus, Gdk.KEY_equal, Gdk.KEY_KP_Add):
@@ -89,6 +89,13 @@ class SSHTerminal(Vte.Terminal):
         if ctrl and ev.keyval in (Gdk.KEY_0, Gdk.KEY_KP_0):
             self._zoom(None); return True
         return False
+
+    def _copy(self):
+        # With nothing selected, VTE would put an empty string on the
+        # clipboard, wiping what a program that owns the mouse (tmux, e.g.
+        # sshtac) just copied there itself.
+        if self.get_has_selection():
+            self.copy_clipboard_format(Vte.Format.TEXT)
 
     def _zoom(self, factor):
         scale = 1.0 if factor is None else max(0.4, min(4.0, self.get_font_scale() * factor))
@@ -100,7 +107,7 @@ class SSHTerminal(Vte.Terminal):
         if ev.button != 3:
             return False
         menu = Gtk.Menu()
-        for label, cb in (("Copy", lambda m: self.copy_clipboard_format(Vte.Format.TEXT)),
+        for label, cb in (("Copy", lambda m: self._copy()),
                           ("Paste", lambda m: self.paste_clipboard()),
                           ("Select all", lambda m: self.select_all())):
             mi = Gtk.MenuItem(label=label); mi.connect("activate", cb); menu.append(mi)
