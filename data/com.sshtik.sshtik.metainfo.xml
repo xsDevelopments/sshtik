@@ -65,6 +65,14 @@
     <color type="primary" scheme_preference="dark">#1c4e6b</color>
   </branding>
   <releases>
+    <release version="0.2.13" date="2026-10-27">
+      <description>
+        <ul>
+          <li>Jump hosts: ProxyJump (one or more hops) and ProxyCommand from ~/.ssh/config are now used when opening a connection, with a password prompt per hop if needed</li>
+          <li>Copy with nothing selected no longer empties the clipboard, so text copied inside tmux (e.g. sshtac) is kept</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.2.12" date="2026-10-23">
       <description>
         <ul>
